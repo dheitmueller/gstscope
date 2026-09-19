@@ -374,6 +374,9 @@
       { selector: 'edge[stub]', style: { 'line-style': 'dotted', width: 1, 'line-color': '#56657a', 'target-arrow-color': '#56657a' } },
       { selector: 'node:selected', style: { 'border-color': '#ffffff', 'border-width': 3, 'z-index': 999 } },
       { selector: 'edge:selected', style: { 'line-color': '#4dd6c6', 'target-arrow-color': '#4dd6c6', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 999 } },
+      { selector: '.trace-dim', style: { opacity: .12 } },
+      { selector: 'node.trace-node', style: { 'border-color': '#77e6da', 'border-width': 2.5, 'z-index': 998 } },
+      { selector: 'edge.trace-edge', style: { 'line-color': '#4dd6c6', 'target-arrow-color': '#4dd6c6', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 998 } },
       { selector: '.search-match', style: { 'border-color': '#f5d06f', 'border-width': 4 } },
       { selector: '.search-dim', style: { opacity: .2 } }
     ];
@@ -382,6 +385,22 @@
   function rememberPositions() {
     if (!state.cy) return;
     state.cy.nodes().forEach(n => state.positions.set(n.id(), { ...n.position() }));
+  }
+
+  function clearTrace() {
+    state.cy?.elements().removeClass('trace-node trace-edge trace-dim');
+  }
+
+  function focusTrace(target) {
+    const cy = state.cy;
+    if (!cy || !target?.length) return;
+    clearTrace();
+    const focus = target.isNode()
+      ? target.union(target.connectedEdges()).union(target.neighborhood('node'))
+      : target.union(target.source()).union(target.target());
+    cy.elements().not(focus).addClass('trace-dim');
+    focus.filter('node').addClass('trace-node');
+    focus.filter('edge').addClass('trace-edge');
   }
 
   function render({ layout = true, fit = true } = {}) {
@@ -395,9 +414,9 @@
       minZoom: .07, maxZoom: 3.5, boxSelectionEnabled: false
     });
     const cy = state.cy;
-    cy.on('tap', 'node', evt => { state.selectedId = evt.target.id(); showDetails(evt.target); });
-    cy.on('tap', 'edge', evt => { state.selectedId = null; showDetails(evt.target); });
-    cy.on('tap', evt => { if (evt.target === cy) state.selectedId = null; });
+    cy.on('tap', 'node', evt => { state.selectedId = evt.target.id(); focusTrace(evt.target); showDetails(evt.target); });
+    cy.on('tap', 'edge', evt => { state.selectedId = null; focusTrace(evt.target); showDetails(evt.target); });
+    cy.on('tap', evt => { if (evt.target === cy) { state.selectedId = null; clearTrace(); } });
     cy.on('tap', 'node[kind="bin"]', evt => {
       const now = Date.now(), id = evt.target.id();
       if (state.lastTap.id === id && now - state.lastTap.at < 420) toggleBin(id);
@@ -419,7 +438,7 @@
     ui.stats.textContent = `${state.graph.items.size - 1} elements · ${state.graph.links.length} links · ${view.nodes.length} visible · ${view.hiddenCount} contracted`;
     syncControls();
     const selected = state.selectedId ? cy.getElementById(state.selectedId) : null;
-    if (selected?.length) { selected.select(); showItem(state.selectedId); }
+    if (selected?.length) { selected.select(); focusTrace(selected); showItem(state.selectedId); }
     if (ui.search.value.trim()) requestAnimationFrame(search);
   }
 
