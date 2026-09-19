@@ -267,14 +267,22 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
   }
 
   function capsLabelMetrics(label = '') {
-    if (!label) return { above: 0, beside: 0 };
+    if (!label) return { width: 0, height: 0, above: 0, beside: 0 };
     const lines = label.split('\n');
     const wrappedLines = label.split('\n').reduce((count, line) => count + Math.max(1, Math.ceil(line.length / 36)), 0);
     const longestLine = Math.min(36, Math.max(...lines.map(line => line.length)));
+    const width = Math.max(24, longestLine * 4.8);
+    const height = Math.max(12, wrappedLines * 9 * 1.25);
     return {
-      above: -(wrappedLines * 9 * 1.25 / 2 + 10),
-      beside: longestLine * 4.8 / 2 + 10
+      width,
+      height,
+      above: -(height / 2 + 10),
+      beside: width / 2 + 10
     };
+  }
+
+  function isGraphNode(node) {
+    return node.data('kind') !== 'pad' && node.data('kind') !== 'edge-label';
   }
 
   function displayLabel(item, collapsed) {
@@ -419,8 +427,26 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const caps = [...new Set(e.links.map(l => formatCaps(l.caps)).filter(Boolean))].join('\n\n');
       const label = state.options.caps === 'full' ? caps : state.options.caps === 'media' ? mediaType(caps) : '';
       const labelMetrics = capsLabelMetrics(label);
-      return { data: { id: `edge-${i}`, source: e.source, target: e.target, label, mainLabel: '', sourceLabel: '', targetLabel: '', labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, labelOffsetX: 0, labelOffsetY: 0, sourceLabelOffset: 0, targetLabelOffset: 0, sourceLabelMarginY: 0, targetLabelMarginY: 0, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId, targetPadId, segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
+      const id = `edge-${i}`;
+      const labelNodeId = label ? `edge-label-${i}` : '';
+      return { data: { id, source: e.source, target: e.target, label, labelNodeId, labelWidth: labelMetrics.width, labelHeight: labelMetrics.height, labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId, targetPadId, segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
     });
+
+    for (const edge of cyEdges) {
+      if (!edge.data.labelNodeId) continue;
+      cyNodes.push({
+        data: {
+          id: edge.data.labelNodeId,
+          kind: 'edge-label',
+          label: edge.data.label,
+          edgeId: edge.data.id,
+          labelWidth: edge.data.labelWidth,
+          labelHeight: edge.data.labelHeight
+        },
+        grabbable: false,
+        selectable: false
+      });
+    }
 
     for (const [owner, groups] of padsByOwner) {
       for (const pad of [...groups.sink, ...groups.src]) {
@@ -451,7 +477,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       { selector: 'node[kind="pad"][typeClass="sink"]', style: { 'background-color': '#39271d', 'border-color': '#f5a65b', color: '#ffd9b3' } },
       { selector: 'node[kind="pad"][typeClass="src"]', style: { 'background-color': '#133330', 'border-color': '#4dd6c6', color: '#baf5ee' } },
       { selector: 'node.unlinked-pad', style: { 'border-style': 'dashed', opacity: .78 } },
-      { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', label: 'data(mainLabel)', 'source-label': 'data(sourceLabel)', 'target-label': 'data(targetLabel)', color: '#aebccc', 'font-size': 9, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-margin-x': 'data(labelOffsetX)', 'text-margin-y': 'data(labelOffsetY)', 'source-text-offset': 'data(sourceLabelOffset)', 'target-text-offset': 'data(targetLabelOffset)', 'source-text-margin-y': 'data(sourceLabelMarginY)', 'target-text-margin-y': 'data(targetLabelMarginY)', 'text-background-color': '#091019', 'text-background-opacity': .94, 'text-background-padding': 3, 'text-rotation': 'none', 'source-text-rotation': 'none', 'target-text-rotation': 'none', 'overlay-opacity': 0 } },
+      { selector: 'node[kind="edge-label"]', style: { width: 'data(labelWidth)', height: 'data(labelHeight)', shape: 'round-rectangle', label: 'data(label)', 'background-color': '#091019', 'background-opacity': .94, 'border-width': 0, color: '#aebccc', 'font-size': 9, 'font-weight': 400, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-valign': 'center', 'text-halign': 'center', padding: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1003, 'overlay-opacity': 0 } },
+      { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', 'overlay-opacity': 0 } },
       { selector: 'edge[synthetic]', style: { 'line-style': 'dashed', 'line-color': '#b78a59', 'target-arrow-color': '#b78a59' } },
       { selector: 'node.trace-dim', style: { opacity: .48 } },
       { selector: 'edge.trace-dim', style: { opacity: .28 } },
@@ -469,7 +496,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
 
   function rememberPositions() {
     if (!state.cy) return;
-    state.cy.nodes().filter(n => n.data('kind') !== 'pad').forEach(n => state.positions.set(n.id(), { ...n.position() }));
+    state.cy.nodes().filter(isGraphNode).forEach(n => state.positions.set(n.id(), { ...n.position() }));
   }
 
   function clearTrace() {
@@ -486,16 +513,19 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const coreIds = new Set(coreNodes.map(node => node.id()));
       const padBadges = cy.nodes().filter(node => node.data('kind') === 'pad' && coreIds.has(node.data('ownerId')));
       const incidentEdges = coreNodes.connectedEdges();
-      focus = coreNodes.union(padBadges).union(incidentEdges).union(incidentEdges.connectedNodes());
+      const incidentIds = new Set(incidentEdges.map(edge => edge.id()));
+      const edgeLabels = cy.nodes().filter(node => node.data('kind') === 'edge-label' && incidentIds.has(node.data('edgeId')));
+      focus = coreNodes.union(padBadges).union(incidentEdges).union(edgeLabels).union(incidentEdges.connectedNodes());
       incidentEdges.filter(edge => coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-edge');
       incidentEdges.filter(edge => !coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-in');
       incidentEdges.filter(edge => coreNodes.contains(edge.source()) && !coreNodes.contains(edge.target())).addClass('trace-out');
     } else {
-      focus = target.union(target.source()).union(target.target());
+      const edgeLabel = cy.nodes().filter(node => node.data('kind') === 'edge-label' && node.data('edgeId') === target.id());
+      focus = target.union(edgeLabel).union(target.source()).union(target.target());
       target.addClass('trace-edge');
     }
     cy.elements().not(focus).addClass('trace-dim');
-    focus.filter('node').addClass('trace-node');
+    focus.filter('node').filter(isGraphNode).addClass('trace-node');
   }
 
   function render({ layout = true, fit = true } = {}) {
@@ -512,6 +542,16 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const cy = state.cy;
     cy.on('tap', 'node', evt => {
       const target = evt.target;
+      if (target.data('kind') === 'edge-label') {
+        const edge = cy.getElementById(target.data('edgeId'));
+        if (!edge.length) return;
+        state.selectedId = null;
+        cy.elements().unselect();
+        edge.select();
+        focusTrace(edge);
+        showDetails(edge);
+        return;
+      }
       if (target.data('kind') === 'pad') {
         const owner = cy.getElementById(target.data('ownerId'));
         state.selectedId = owner.id();
@@ -562,7 +602,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       state.lastTap = { id, at: now };
     });
     cy.on('dragfree', 'node', evt => {
-      if (evt.target.data('kind') === 'pad') return;
+      if (!isGraphNode(evt.target)) return;
       state.positions.set(evt.target.id(), { ...evt.target.position() });
       placePadBadges();
       applyEdgeGeometry();
@@ -571,14 +611,14 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     if (layout) runLayout(fit, previousVisible);
     else {
       const center = { x: cy.width() / 2, y: cy.height() / 2 };
-      cy.nodes().filter(n => n.data('kind') !== 'pad').forEach((n, i) => n.position(state.positions.get(n.id()) || { x: center.x + (i % 5) * 28, y: center.y + Math.floor(i / 5) * 28 }));
+      cy.nodes().filter(isGraphNode).forEach((n, i) => n.position(state.positions.get(n.id()) || { x: center.x + (i % 5) * 28, y: center.y + Math.floor(i / 5) * 28 }));
       placePadBadges();
       applyEdgeGeometry();
       if (fit) cy.fit(undefined, 42);
     }
     clearTimeout(startupTimer);
     ui.loading.classList.add('hidden');
-    const visibleElements = view.nodes.filter(node => node.data.kind !== 'pad').length;
+    const visibleElements = view.nodes.filter(node => node.data.kind !== 'pad' && node.data.kind !== 'edge-label').length;
     ui.stats.textContent = `${state.graph.items.size - 1} elements · ${state.graph.links.length} links · ${visibleElements} visible · ${view.hiddenCount} contracted`;
     syncControls();
     const selected = state.selectedId ? cy.getElementById(state.selectedId) : null;
@@ -673,7 +713,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       };
     };
 
-    const graphNodes = cy.nodes().filter(node => node.data('kind') !== 'pad');
+    const graphNodes = cy.nodes().filter(isGraphNode);
     const obstacles = graphNodes.filter(node => !node.isParent());
     const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
     const reservedRoutes = [];
@@ -712,6 +752,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const source = endpointPosition(edge, 'source');
       const target = endpointPosition(edge, 'target');
       const turnRatio = chooseTurnRatio(edge, source, target);
+      edge.scratch('_appliedTurn', turnRatio);
       const geometry = orthogonalSegmentData(source, target, turnRatio);
       if (!geometry) {
         edge.data('segmentWeights', '0.5');
@@ -743,47 +784,59 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const labelRoutes = cy.edges().map(edge => orthogonalRouteSegments(
         endpointPosition(edge, 'source'),
         endpointPosition(edge, 'target'),
-        edge.scratch('_routeTurn') ?? .5
+        edge.scratch('_appliedTurn') ?? edge.scratch('_routeTurn') ?? .5
       ));
       cy.edges().forEach(edge => {
+        const labelNode = cy.getElementById(edge.data('labelNodeId'));
+        if (!labelNode.length) return;
         const source = endpointPosition(edge, 'source');
         const target = endpointPosition(edge, 'target');
         const dx = Math.abs(target.x - source.x);
         const dy = Math.abs(target.y - source.y);
         const vertical = dy > Math.max(80, dx * .65);
-        edge.data('mainLabel', '');
-        edge.data('sourceLabel', '');
-        edge.data('targetLabel', '');
-        edge.data('labelOffsetX', 0);
-        edge.data('labelOffsetY', 0);
-        if (vertical && edge.data('label')) {
-          const midpointX = (source.x + target.x) / 2;
-          const beside = edge.data('labelBeside') || 36;
-          const side = midpointX + beside + 18 > graphBounds.x2 ? -1 : 1;
-          edge.data('mainLabel', edge.data('label'));
-          edge.data('labelOffsetX', side * beside);
+        const labelWidth = edge.data('labelWidth') || 24;
+        const labelHeight = edge.data('labelHeight') || 12;
+        if (vertical) {
+          const turnX = source.x + (target.x - source.x) * (edge.scratch('_appliedTurn') ?? edge.scratch('_routeTurn') ?? .5);
+          const centerY = (source.y + target.y) / 2;
+          const sides = turnX + labelWidth / 2 + 10 > graphBounds.x2 ? [-1, 1] : [1, -1];
+          const intersects = (a, b) => a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+          const candidates = sides.map((side, index) => {
+            const centerX = turnX + side * (labelWidth / 2 + 7);
+            const box = { x1: centerX - labelWidth / 2, x2: centerX + labelWidth / 2, y1: centerY - labelHeight / 2, y2: centerY + labelHeight / 2 };
+            let score = index * 25;
+            labelObstacles.forEach(obstacle => { if (intersects(box, obstacle)) score += 10000; });
+            labelBoxes.forEach(other => { if (intersects(box, other)) score += 5000; });
+            labelRoutes.forEach(route => {
+              if (route.vertical.x >= box.x1 - 3 && route.vertical.x <= box.x2 + 3 && route.vertical.end >= box.y1 && route.vertical.start <= box.y2) score += 3000;
+              route.horizontals.forEach(horizontal => {
+                if (horizontal.y >= box.y1 - 3 && horizontal.y <= box.y2 + 3 && horizontal.end >= box.x1 && horizontal.start <= box.x2) score += 3000;
+              });
+            });
+            return { centerX, centerY, box, score };
+          });
+          const placement = candidates.sort((a, b) => a.score - b.score)[0];
+          labelNode.position({ x: placement.centerX, y: placement.centerY });
+          labelBoxes.push(placement.box);
           return;
         }
-        if (!edge.data('label')) return;
-        const halfWidth = Math.max(1, (edge.data('labelBeside') || 11) - 10);
-        const halfHeight = Math.max(1, Math.abs(edge.data('labelAbove') || -11) - 10);
         const placement = horizontalLabelPlacement(
           source,
           target,
-          edge.scratch('_routeTurn') ?? .5,
-          { width: halfWidth * 2, height: halfHeight * 2 },
+          edge.scratch('_appliedTurn') ?? edge.scratch('_routeTurn') ?? .5,
+          { width: labelWidth, height: labelHeight },
           labelObstacles,
           labelBoxes,
           labelRoutes
         );
         if (!placement) {
-          edge.data('mainLabel', edge.data('label'));
-          edge.data('labelOffsetY', edge.data('labelAbove') || 0);
+          labelNode.position({ x: (source.x + target.x) / 2, y: source.y + (edge.data('labelAbove') || -16) });
           return;
         }
-        edge.data(`${placement.anchor}Label`, edge.data('label'));
-        edge.data(`${placement.anchor}LabelOffset`, placement.offset);
-        edge.data(`${placement.anchor}LabelMarginY`, placement.marginY);
+        labelNode.position({
+          x: (placement.box.x1 + placement.box.x2) / 2,
+          y: (placement.box.y1 + placement.box.y2) / 2
+        });
         labelBoxes.push(placement.box);
       });
     });
@@ -792,7 +845,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
   function runLayout(fit = true, previousVisible = null) {
     if (!state.cy) return;
     const cy = state.cy;
-    const graphNodes = cy.nodes().filter(node => node.data('kind') !== 'pad');
+    const graphNodes = cy.nodes().filter(isGraphNode);
     const nodeCount = graphNodes.length;
     const leaves = graphNodes.filter(node => !node.isParent());
     const leafIds = new Set(leaves.map(node => node.id()));
@@ -1099,13 +1152,16 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     }
 
     const modelMatchIds = new Set(modelMatches.map(item => item.id));
-    const matches = state.cy.nodes().filter(n => n.data('kind') !== 'pad' && modelMatchIds.has(n.id()));
+    const matches = state.cy.nodes().filter(n => isGraphNode(n) && modelMatchIds.has(n.id()));
     const matchIds = new Set(matches.map(node => node.id()));
     const matchedPadBadges = state.cy.nodes().filter(node => node.data('kind') === 'pad' && matchIds.has(node.data('ownerId')));
     state.cy.elements().addClass('search-dim');
     matches.removeClass('search-dim').addClass('search-match');
     matchedPadBadges.removeClass('search-dim');
-    matches.connectedEdges().removeClass('search-dim');
+    const matchedEdges = matches.connectedEdges();
+    matchedEdges.removeClass('search-dim');
+    const matchedEdgeIds = new Set(matchedEdges.map(edge => edge.id()));
+    state.cy.nodes().filter(node => node.data('kind') === 'edge-label' && matchedEdgeIds.has(node.data('edgeId'))).removeClass('search-dim');
     if (matches.length) {
       const primary = modelMatches.length === 1 ? state.cy.getElementById(modelMatches[0].id) : matches[0];
       state.cy.animate({ center: { eles: primary }, zoom: Math.max(state.cy.zoom(), .9) }, { duration: 260 });
