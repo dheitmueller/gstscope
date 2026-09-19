@@ -36,6 +36,26 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     selectedId: null,
     filename: 'playbin3-hang.dot'
   };
+  let startupTimer = null;
+
+  function showLoading() {
+    clearTimeout(startupTimer);
+    ui.loading.classList.remove('hidden', 'error');
+    ui.loading.innerHTML = '<span></span>Building semantic view';
+    startupTimer = setTimeout(() => {
+      if (!state.graph) showStartupError(new Error('The initial graph took too long to load.'));
+    }, 12000);
+  }
+
+  function showStartupError(error) {
+    clearTimeout(startupTimer);
+    ui.loading.classList.remove('hidden');
+    ui.loading.classList.add('error');
+    ui.loading.innerHTML = `<strong>Could not build the semantic view</strong><small>${esc(error.message)}</small><button class="button" id="retryStartup">Retry</button>`;
+    ui.stats.textContent = 'Startup interrupted';
+    $('retryStartup').addEventListener('click', () => loadBuiltIn().catch(showStartupError));
+    console.error(error);
+  }
 
   function decode(value = '') {
     const raw = value.trim().replace(/^"|"$/g, '');
@@ -556,6 +576,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       applyEdgeGeometry();
       if (fit) cy.fit(undefined, 42);
     }
+    clearTimeout(startupTimer);
     ui.loading.classList.add('hidden');
     const visibleElements = view.nodes.filter(node => node.data.kind !== 'pad').length;
     ui.stats.textContent = `${state.graph.items.size - 1} elements · ${state.graph.links.length} links · ${visibleElements} visible · ${view.hiddenCount} contracted`;
@@ -1093,7 +1114,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
 
   async function loadText(text, filename) {
     try {
-      ui.loading.classList.remove('hidden');
+      showLoading();
       ui.fileName.textContent = filename;
       state.filename = filename;
       state.graph = parseDot(text, filename);
@@ -1110,9 +1131,26 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
   }
 
   async function loadBuiltIn() {
-    const response = await fetch('samples/playbin3-hang.dot');
-    if (!response.ok) throw new Error('Built-in sample is unavailable');
-    loadText(await response.text(), 'playbin3-hang.dot');
+    showLoading();
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 7000);
+      try {
+        const response = await fetch('samples/playbin3-hang.dot', {
+          signal: controller.signal,
+          cache: attempt ? 'reload' : 'default'
+        });
+        if (!response.ok) throw new Error(`Built-in sample returned HTTP ${response.status}`);
+        await loadText(await response.text(), 'playbin3-hang.dot');
+        return;
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    throw new Error(lastError?.name === 'AbortError' ? 'The built-in sample request timed out.' : lastError?.message || 'Built-in sample is unavailable.');
   }
 
   function makeStressDot() {
@@ -1144,7 +1182,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
   ui.fileInput.addEventListener('change', async () => { const file = ui.fileInput.files[0]; if (file) loadText(await file.text(), file.name); });
   $('sampleSelect').addEventListener('change', e => {
     if (e.target.value === 'stress') loadText(makeStressDot(), 'synthetic-stress-280.dot');
-    else loadBuiltIn();
+    else loadBuiltIn().catch(showStartupError);
   });
   document.querySelectorAll('[data-preset]').forEach(btn => btn.addEventListener('click', () => applyPreset(btn.dataset.preset)));
   $('fitButton').addEventListener('click', () => state.cy?.fit(undefined, 42));
@@ -1203,6 +1241,6 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     $('sampleSelect').value = 'stress';
     loadText(makeStressDot(), 'synthetic-stress-280.dot');
   } else {
-    loadBuiltIn().catch(error => { ui.loading.textContent = error.message; console.error(error); });
+    loadBuiltIn().catch(showStartupError);
   }
 })();
