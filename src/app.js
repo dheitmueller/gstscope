@@ -374,8 +374,6 @@ import { orthogonalSegmentData } from './geometry.js';
       { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', label: 'data(label)', color: '#aebccc', 'font-size': 9, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-margin-x': 'data(labelOffsetX)', 'text-margin-y': 'data(labelOffsetY)', 'text-background-color': '#091019', 'text-background-opacity': .94, 'text-background-padding': 3, 'text-rotation': 'none', 'overlay-opacity': 0 } },
       { selector: 'edge[synthetic]', style: { 'line-style': 'dashed', 'line-color': '#b78a59', 'target-arrow-color': '#b78a59' } },
       { selector: 'edge[stub]', style: { 'line-style': 'dotted', width: 1, 'line-color': '#56657a', 'target-arrow-color': '#56657a' } },
-      { selector: 'node:selected', style: { 'border-color': '#ffffff', 'border-width': 3, 'z-index': 999 } },
-      { selector: 'edge:selected', style: { 'line-color': '#4dd6c6', 'target-arrow-color': '#4dd6c6', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 999 } },
       { selector: 'node.trace-dim', style: { opacity: .48 } },
       { selector: 'edge.trace-dim', style: { opacity: .28 } },
       { selector: 'node.trace-node', style: { 'border-color': '#77e6da', 'border-width': 2.5, 'z-index': 998 } },
@@ -383,7 +381,9 @@ import { orthogonalSegmentData } from './geometry.js';
       { selector: 'edge.trace-in', style: { 'line-color': '#f5a65b', 'target-arrow-color': '#f5a65b', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 998 } },
       { selector: 'edge.trace-out', style: { 'line-color': '#4dd6c6', 'target-arrow-color': '#4dd6c6', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 998 } },
       { selector: '.search-match', style: { 'border-color': '#f5d06f', 'border-width': 4 } },
-      { selector: '.search-dim', style: { opacity: .2 } }
+      { selector: '.search-dim', style: { opacity: .2 } },
+      { selector: 'node:selected', style: { 'background-color': '#2b3d54', 'border-color': '#ffffff', 'border-width': 4, 'underlay-color': '#4dd6c6', 'underlay-opacity': .32, 'underlay-padding': 8, 'z-index': 999 } },
+      { selector: 'edge:selected', style: { 'line-color': '#ffffff', 'target-arrow-color': '#ffffff', width: 4, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 999 } }
     ];
   }
 
