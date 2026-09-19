@@ -852,6 +852,21 @@
       const renderer = await Viz.instance();
       const svg = renderer.renderSVGElement(state.graph.source);
       host.replaceChildren(svg);
+      requestAnimationFrame(() => {
+        const hostBox = host.getBoundingClientRect();
+        const firstNode = [...svg.querySelectorAll('g.node')]
+          .filter(node => node.querySelector('title')?.textContent !== 'legend')
+          .sort((a, b) => {
+            const aBox = a.getBoundingClientRect();
+            const bBox = b.getBoundingClientRect();
+            return aBox.left - bBox.left || aBox.top - bBox.top;
+          })[0];
+        const nodeBox = firstNode?.getBoundingClientRect();
+        host.scrollTo({
+          left: Math.max(0, (nodeBox?.left || hostBox.left) - hostBox.left - 28),
+          top: Math.max(0, (nodeBox?.top || hostBox.top) - hostBox.top - 48)
+        });
+      });
     } catch (error) {
       host.innerHTML = `<div class="muted">Graphviz could not render this file: ${esc(error.message)}</div>`;
     }
