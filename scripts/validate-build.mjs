@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 const required = [
   'index.html',
   'app.js',
+  'geometry.js',
   'styles.css',
   'samples/playbin3-hang.dot',
   'vendor/cytoscape.min.js',

@@ -4,9 +4,7 @@ GstScope is a browser-only explorer for large GStreamer DOT pipeline dumps. It t
 
 ## Try it
 
-The latest successful build of `main` is published at:
-
-**https://dheitmueller.github.io/gstscope/**
+The GitHub Pages workflow is configured for **https://dheitmueller.github.io/gstscope/**. The repository owner must enable GitHub Actions as the Pages source once under **Settings → Pages** before the first deployment can complete.
 
 DOT files selected with **Open DOT** or drag-and-drop stay in the browser. GstScope has no server-side runtime and does not upload pipeline data.
 
@@ -27,7 +25,8 @@ Useful commands:
 
 ```sh
 npm run build   # create the static site in dist/
-npm run check   # clean build, JavaScript syntax check, and Pages-path validation
+npm test        # verify orthogonal-routing geometry
+npm run check   # tests, clean build, syntax check, and Pages-path validation
 npm run dev     # build and serve locally
 ```
 
@@ -40,6 +39,8 @@ npm run dev     # build and serve locally
 - Collapsible hierarchy, queue and redundant-tee contraction, and optional unlinked-pad stubs.
 - Off, media-type, and full caps-label modes.
 - Element, bin, pad, and edge details in the inspector.
+- Right-angle, right-to-left link geometry with separate ports for fan-in and fan-out.
+- Direction-aware tracing: incoming links are amber, outgoing links are teal, and expanded-bin internals are violet.
 - Pan, zoom, fit, re-layout, node dragging, and search.
 - In-browser raw Graphviz comparison using the same DOT source.
 - A real `playbin3` sample plus a generated 280-element stress graph.
@@ -70,7 +71,7 @@ The bundled `playbin3-hang.dot` comes from [Matthijs Kooijman's public GStreamer
 - Factory recovery depends on conventional GStreamer cluster labels.
 - Simplification may coalesce parallel links between the same visible endpoints; the inspector retains the underlying link count.
 - Manual positions last only for the current browser session.
-- Graph comparison, live pipeline updates, telemetry, and editing are out of scope.
+- Live pipeline updates, telemetry, and editing are out of scope.
 
 ## License
 

@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "npm run build && node --check dist/app.js && node scripts/validate-build.mjs",
+    "test": "node scripts/test-geometry.mjs",
+    "check": "npm run test && npm run build && node --check dist/app.js && node scripts/validate-build.mjs",
     "dev": "npm run build && node scripts/serve.mjs"
   },
   "dependencies": {

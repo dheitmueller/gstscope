@@ -1,3 +1,5 @@
+import { orthogonalSegmentData } from './geometry.js';
+
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
   'use strict';
@@ -507,27 +509,14 @@
     const applySegments = edge => {
       const source = endpointPosition(edge, 'source');
       const target = endpointPosition(edge, 'target');
-      const dx = target.x - source.x;
-      const dy = target.y - source.y;
-      const lengthSquared = dx * dx + dy * dy;
-      if (lengthSquared < 1 || Math.abs(dy) < 1) {
+      const geometry = orthogonalSegmentData(source, target, edge.scratch('_routeTurn'));
+      if (!geometry) {
         edge.data('segmentWeights', '0.5');
         edge.data('segmentDistances', '0');
         return;
       }
-      const length = Math.sqrt(lengthSquared);
-      const turnX = source.x + dx * (edge.scratch('_routeTurn') || .5);
-      const controls = [{ x: turnX, y: source.y }, { x: turnX, y: target.y }];
-      const weights = [];
-      const distances = [];
-      controls.forEach(point => {
-        const px = point.x - source.x;
-        const py = point.y - source.y;
-        weights.push((px * dx + py * dy) / lengthSquared);
-        distances.push((px * -dy + py * dx) / length);
-      });
-      edge.data('segmentWeights', weights.map(value => value.toFixed(5)).join(' '));
-      edge.data('segmentDistances', distances.map(value => value.toFixed(2)).join(' '));
+      edge.data('segmentWeights', geometry.weights.map(value => value.toFixed(5)).join(' '));
+      edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
     };
 
     cy.batch(() => {
