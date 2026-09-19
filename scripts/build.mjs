@@ -1,10 +1,27 @@
-import { cp, copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { cp, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = resolve(root, 'src');
 const output = resolve(root, 'dist');
+const execFileAsync = promisify(execFile);
+
+async function gitOutput(args) {
+  const { stdout } = await execFileAsync('git', args, { cwd: root });
+  return stdout.trim();
+}
+
+async function buildVersion() {
+  try {
+    return await gitOutput(['describe', '--tags', '--exact-match', 'HEAD']);
+  } catch {
+    try { return await gitOutput(['rev-parse', '--short=7', 'HEAD']); }
+    catch { return 'unknown'; }
+  }
+}
 
 await rm(output, { recursive: true, force: true });
 await mkdir(resolve(output, 'vendor'), { recursive: true });
@@ -24,5 +41,10 @@ for (const [from, to] of vendorFiles) {
   await copyFile(resolve(root, from), resolve(output, to));
 }
 
+const version = await buildVersion();
+const indexPath = resolve(output, 'index.html');
+const index = await readFile(indexPath, 'utf8');
+await writeFile(indexPath, index.replace('@@GSTSCOPE_VERSION@@', version));
+
 await writeFile(resolve(output, '.nojekyll'), '');
-console.log(`Built static site in ${output}`);
+console.log(`Built GstScope ${version} in ${output}`);

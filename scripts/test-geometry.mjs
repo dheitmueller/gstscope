@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
-import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey } from '../src/model.js';
+import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -75,6 +75,20 @@ assert.equal(
     { name: 'src_1', element: 'multiqueue' }
   ),
   false
+);
+
+assert.equal(numberedPadOrder('src_0'), 0);
+assert.equal(numberedPadOrder('video_12'), 12);
+assert.equal(numberedPadOrder('src'), null);
+assert.deepEqual(
+  siblingOrderAssignments([
+    { id: 'abin', order: 1, y: 100 },
+    { id: 'vdbin', order: 0, y: 220 }
+  ]),
+  [
+    { id: 'vdbin', y: 100 },
+    { id: 'abin', y: 220 }
+  ]
 );
 assert.equal(
   padsShareFlowChannel(

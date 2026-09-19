@@ -1,5 +1,5 @@
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
-import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey } from './model.js';
+import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -744,6 +744,32 @@ import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdg
       }));
     });
     dagre.layout(guide);
+
+    // Dagre is free to order nodes that share a rank, which can invert an
+    // element's numbered output pads. Preserve the semantic top-to-bottom
+    // order for direct siblings such as src_0 -> video and src_1 -> audio.
+    leaves.forEach(source => {
+      const groups = new Map();
+      source.outgoers('edge').forEach(edge => {
+        const target = edge.target();
+        if (!leafIds.has(target.id())) return;
+        const position = guide.node(target.id());
+        const pad = state.graph.pads.get(edge.data('sourcePadId'));
+        const order = numberedPadOrder(pad?.name);
+        if (!position || order === null) return;
+        const parentId = target.parent().id() || '__root__';
+        const key = `${parentId}|${position.x.toFixed(3)}`;
+        if (!groups.has(key)) groups.set(key, new Map());
+        const siblings = groups.get(key);
+        const current = siblings.get(target.id());
+        if (!current || order < current.order) siblings.set(target.id(), { id: target.id(), order, y: position.y });
+      });
+      groups.forEach(siblings => {
+        if (siblings.size < 2) return;
+        siblingOrderAssignments([...siblings.values()]).forEach(({ id, y }) => { guide.node(id).y = y; });
+      });
+    });
+
     const placements = [];
     const transitionGroups = new Map();
     const priorIds = previousVisible || new Set(leaves.map(node => node.id()));

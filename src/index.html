@@ -46,11 +46,14 @@
     </aside>
   </main>
   <footer class="footerbar">
-    <div class="controls">
-      <label><input id="toggleQueues" type="checkbox"> Queues</label>
-      <label><input id="toggleTees" type="checkbox"> Redundant tees</label>
-      <label><input id="togglePads" type="checkbox"> Unlinked pads</label>
-      <label>Caps <select id="capsMode"><option value="none">Off</option><option value="media" selected>Media type</option><option value="full">Full</option></select></label>
+    <div class="footer-start">
+      <span class="version-label">Version <span>@@GSTSCOPE_VERSION@@</span></span>
+      <div class="controls">
+        <label><input id="toggleQueues" type="checkbox"> Queues</label>
+        <label><input id="toggleTees" type="checkbox"> Redundant tees</label>
+        <label><input id="togglePads" type="checkbox"> Unlinked pads</label>
+        <label>Caps <select id="capsMode"><option value="none">Off</option><option value="media" selected>Media type</option><option value="full">Full</option></select></label>
+      </div>
     </div>
     <div class="controls">
       <button class="text-button" id="collapseAll">Collapse all</button>
@@ -69,6 +72,6 @@
   <script src="vendor/dagre.min.js"></script>
   <script src="vendor/cytoscape-dagre.js"></script>
   <script src="vendor/viz-global.js"></script>
-  <script type="module" src="app.js?v=20260919-12"></script>
+  <script type="module" src="app.js?v=20260919-13"></script>
 </body>
 </html>

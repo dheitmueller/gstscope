@@ -33,3 +33,15 @@ export function padsShareFlowChannel(inputPad, outputPad) {
   const inputChannel = channel(inputPad);
   return inputChannel !== null && inputChannel === channel(outputPad);
 }
+
+export function numberedPadOrder(name = '') {
+  const match = /(?:^|_)(\d+)$/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+export function siblingOrderAssignments(items) {
+  const slots = items.map(item => item.y).sort((a, b) => a - b);
+  return [...items]
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    .map((item, index) => ({ id: item.id, y: slots[index] }));
+}
