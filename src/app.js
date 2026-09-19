@@ -325,6 +325,14 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       return item?.kind === 'bin' && !state.collapsed.has(id);
     }));
     const padsEquivalent = (a, b) => a === b || g.padAliases.get(a)?.has(b) || g.padAliases.get(b)?.has(a);
+    const meaningfulPadId = padId => {
+      const pad = g.pads.get(padId);
+      if (pad && !/^proxypad/i.test(pad.name || '')) return pad.id;
+      return [...(g.padAliases.get(padId) || [])].find(id => {
+        const candidate = g.pads.get(id);
+        return candidate?.element === pad?.element && !/^proxypad/i.test(candidate.name || '');
+      }) || padId;
+    };
 
     const outgoing = new Map();
     for (const e of baseEdges) {
@@ -340,16 +348,20 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     }
 
     const projectedEdges = [];
-    const walk = (edge, path, seen) => {
+    const walk = (edge, path, seen, boundaries = []) => {
       if (seen.has(edge.target)) return;
       if (!hidden.has(edge.target) && !transparent.has(edge.target)) {
-        projectedEdges.push({ source: edge.source, target: edge.target, links: edge.links, hiddenPath: path });
+        projectedEdges.push({ source: edge.source, target: edge.target, links: edge.links, hiddenPath: path, boundaries });
         return;
       }
       const nextSeen = new Set(seen).add(edge.target);
       let next = outgoing.get(edge.target) || [];
+      let nextBoundaries = boundaries;
       if (transparent.has(edge.target) || hidden.has(edge.target)) {
         const incomingPad = edge.links.at(-1)?.sinkPad;
+        if (transparent.has(edge.target) && incomingPad) {
+          nextBoundaries = [...boundaries, { ownerId: edge.target, padId: meaningfulPadId(incomingPad) }];
+        }
         const matched = next.filter(n => {
           const outgoingPad = n.links[0]?.sourcePad;
           if (transparent.has(edge.target)) return padsEquivalent(incomingPad, outgoingPad);
@@ -358,7 +370,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         next = matched.length ? matched : next.length === 1 ? next : [];
       }
       const nextPath = hidden.has(edge.target) ? [...path, edge.target] : path;
-      for (const n of next) walk({ source: edge.source, target: n.target, links: [...edge.links, ...n.links] }, nextPath, nextSeen);
+      for (const n of next) walk({ source: edge.source, target: n.target, links: [...edge.links, ...n.links] }, nextPath, nextSeen, nextBoundaries);
     };
     for (const e of baseEdges) if (!hidden.has(e.source) && !transparent.has(e.source)) walk(e, [], new Set([e.source]));
 
@@ -380,10 +392,6 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     for (const pad of g.pads.values()) {
       const owner = pad.element;
       if (!nodeSet.has(owner) || hidden.has(owner)) continue;
-      // Once a bin is expanded, its boundary pads no longer have a single
-      // element box to attach to. Its concrete child pads are visible instead,
-      // while the bin's own pads remain available in the inspector.
-      if (g.items.get(owner)?.kind === 'bin' && !state.collapsed.has(owner)) continue;
       // A bin's proxypad and its concrete ghost-pad target are two DOT nodes
       // for one logical boundary port. Show the meaningful concrete name and
       // keep the alias only in the parsed model for endpoint resolution.
@@ -392,20 +400,51 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       (pad.direction === 'src' ? groups.src : groups.sink).push(pad);
       allPadsByOwner.set(owner, groups);
     }
+    const ghostTarget = pad => {
+      if (!pad || g.items.get(pad.element)?.kind !== 'bin' || state.collapsed.has(pad.element)) return null;
+      const equivalent = new Set([pad.id, ...(g.padAliases.get(pad.id) || [])]);
+      const link = g.links.find(candidate => pad.direction === 'sink'
+        ? candidate.sourceElement === pad.element && equivalent.has(candidate.sourcePad)
+        : candidate.sinkElement === pad.element && equivalent.has(candidate.sinkPad));
+      if (!link) return null;
+      return pad.direction === 'sink'
+        ? { elementId: rep(link.sinkElement), padId: link.sinkPad, link }
+        : { elementId: rep(link.sourceElement), padId: link.sourcePad, link };
+    };
     const endpointPadId = (owner, direction, padId) =>
       preferredPadId(allPadsByOwner.get(owner)?.[direction] || [], padId, padsEquivalent);
     const projectedEdgePads = [...edgeMap.values()].map(edge => ({
       edge,
       sourcePadId: endpointPadId(edge.source, 'src', edge.links[0]?.sourcePad),
-      targetPadId: endpointPadId(edge.target, 'sink', edge.links.at(-1)?.sinkPad)
+      targetPadId: endpointPadId(edge.target, 'sink', edge.links.at(-1)?.sinkPad),
+      boundaryPadIds: (edge.boundaries || []).map(boundary => meaningfulPadId(boundary.padId))
     }));
-    const visibleEndpointPads = new Set(projectedEdgePads.flatMap(({ sourcePadId, targetPadId }) => [sourcePadId, targetPadId].filter(Boolean)));
+    const visibleBoundaryPads = new Set(projectedEdgePads.flatMap(({ boundaryPadIds }) => boundaryPadIds));
+    for (const [owner, groups] of allPadsByOwner) {
+      if (g.items.get(owner)?.kind !== 'bin' || state.collapsed.has(owner)) continue;
+      for (const pad of [...groups.sink, ...groups.src]) {
+        const equivalent = id => padsEquivalent(pad.id, id);
+        const externallyLinked = g.links.some(link => pad.direction === 'sink'
+          ? link.targetElement === owner && equivalent(link.sinkPad)
+          : link.sourceElement === owner && equivalent(link.sourcePad));
+        if (externallyLinked) visibleBoundaryPads.add(pad.id);
+      }
+    }
+    const visibleEndpointPads = new Set([
+      ...projectedEdgePads.flatMap(({ sourcePadId, targetPadId, boundaryPadIds }) => [sourcePadId, targetPadId, ...boundaryPadIds].filter(Boolean)),
+      ...visibleBoundaryPads
+    ]);
     const padsByOwner = new Map();
     for (const [owner, groups] of allPadsByOwner) {
+      const expandedBin = g.items.get(owner)?.kind === 'bin' && !state.collapsed.has(owner);
       const visible = {
         sink: groups.sink.filter(pad => visibleEndpointPads.has(pad.id) || state.options.unlinkedPads),
         src: groups.src.filter(pad => visibleEndpointPads.has(pad.id) || state.options.unlinkedPads)
       };
+      if (expandedBin) {
+        visible.sink = visible.sink.filter(pad => visibleBoundaryPads.has(pad.id) || state.options.unlinkedPads);
+        visible.src = visible.src.filter(pad => visibleBoundaryPads.has(pad.id) || state.options.unlinkedPads);
+      }
       if (visible.sink.length || visible.src.length) padsByOwner.set(owner, visible);
     }
 
@@ -427,13 +466,52 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         classes: padRows ? 'has-pad-badges' : ''
       };
     });
-    const cyEdges = projectedEdgePads.map(({ edge: e, sourcePadId, targetPadId }, i) => {
+    const cyEdges = [];
+    projectedEdgePads.forEach(({ edge: e, sourcePadId, targetPadId, boundaryPadIds }, i) => {
       const caps = [...new Set(e.links.map(l => formatCaps(l.caps)).filter(Boolean))].join('\n\n');
       const label = state.options.caps === 'full' ? caps : state.options.caps === 'media' ? mediaType(caps) : '';
       const labelMetrics = capsLabelMetrics(label);
-      const id = `edge-${i}`;
-      const labelNodeId = label ? `edge-label-${i}` : '';
-      return { data: { id, source: e.source, target: e.target, label, labelNodeId, labelWidth: labelMetrics.width, labelHeight: labelMetrics.height, labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId, targetPadId, segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
+      const logicalEdgeId = `flow-${i}`;
+      const chain = [e.source, ...boundaryPadIds.map(id => `pad:${id}`), e.target];
+      const segments = chain.slice(0, -1).map((source, segmentIndex) => {
+        const target = chain[segmentIndex + 1];
+        const sourceBoundaryPad = segmentIndex > 0 ? g.pads.get(boundaryPadIds[segmentIndex - 1]) : null;
+        const targetBoundaryPad = segmentIndex < boundaryPadIds.length ? g.pads.get(boundaryPadIds[segmentIndex]) : null;
+        const ghostConnector = sourceBoundaryPad?.direction === 'sink' || targetBoundaryPad?.direction === 'src';
+        return {
+          data: {
+            id: `edge-${i}-${segmentIndex}`,
+            source,
+            target,
+            logicalEdgeId,
+            layoutSource: e.source,
+            layoutTarget: e.target,
+            label: '',
+            labelNodeId: '',
+            labelWidth: labelMetrics.width,
+            labelHeight: labelMetrics.height,
+            labelAbove: labelMetrics.above,
+            labelBeside: labelMetrics.beside,
+            sourceEndpoint: '50% 0%',
+            targetEndpoint: '-50% 0%',
+            sourcePadId: segmentIndex === 0 ? sourcePadId : boundaryPadIds[segmentIndex - 1],
+            targetPadId: segmentIndex === boundaryPadIds.length ? targetPadId : boundaryPadIds[segmentIndex],
+            segmentDistances: '0',
+            segmentWeights: '0.5',
+            caps,
+            links: e.links,
+            hiddenPath: e.hiddenPath,
+            synthetic: e.hiddenPath.length > 0,
+            ghostConnector
+          }
+        };
+      });
+      const labeledSegment = segments.find(segment => !segment.data.ghostConnector) || segments[0];
+      if (label && labeledSegment) {
+        labeledSegment.data.label = label;
+        labeledSegment.data.labelNodeId = `edge-label-${i}`;
+      }
+      cyEdges.push(...segments);
     });
 
     for (const edge of cyEdges) {
@@ -456,11 +534,27 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       for (const pad of [...groups.sink, ...groups.src]) {
         const id = `pad:${pad.id}`;
         const padWidth = Math.max(30, Math.min(56, 14 + pad.name.length * 5));
+        const target = ghostTarget(pad);
+        const boundary = g.items.get(owner)?.kind === 'bin' && !state.collapsed.has(owner);
         cyNodes.push({
-          data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id, ownerId: owner, padWidth, linked: visibleEndpointPads.has(pad.id), graphLinked: pad.linked },
-          classes: visibleEndpointPads.has(pad.id) ? 'linked-pad' : 'unlinked-pad',
+          data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id, ownerId: owner, padWidth, linked: visibleEndpointPads.has(pad.id), graphLinked: pad.linked, boundary, targetOwnerId: target?.elementId || '', targetPadId: target?.padId || '' },
+          classes: `${visibleEndpointPads.has(pad.id) ? 'linked-pad' : 'unlinked-pad'}${boundary ? ' bin-boundary-pad' : ''}${boundary && !target ? ' no-target-pad' : ''}`,
           grabbable: false
         });
+      }
+    }
+
+    const connectedBoundaryPads = new Set(cyEdges.filter(edge => edge.data.ghostConnector).flatMap(edge => [edge.data.source, edge.data.target].filter(id => id.startsWith('pad:'))));
+    for (const [owner, groups] of padsByOwner) {
+      if (g.items.get(owner)?.kind !== 'bin' || state.collapsed.has(owner)) continue;
+      for (const pad of [...groups.sink, ...groups.src]) {
+        const padNodeId = `pad:${pad.id}`;
+        if (connectedBoundaryPads.has(padNodeId)) continue;
+        const target = ghostTarget(pad);
+        if (!target || !nodeSet.has(target.elementId) || target.elementId === owner) continue;
+        const source = pad.direction === 'sink' ? padNodeId : target.elementId;
+        const sink = pad.direction === 'sink' ? target.elementId : padNodeId;
+        cyEdges.push({ data: { id: `ghost-${pad.id}`, source, target: sink, logicalEdgeId: `ghost-${pad.id}`, layoutSource: '', layoutTarget: '', label: '', labelNodeId: '', labelWidth: 0, labelHeight: 0, labelAbove: 0, labelBeside: 0, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId: pad.direction === 'sink' ? pad.id : target.padId, targetPadId: pad.direction === 'sink' ? target.padId : pad.id, segmentDistances: '0', segmentWeights: '0.5', caps: '', links: [target.link], hiddenPath: [], synthetic: false, ghostConnector: true, auxiliary: true } });
       }
     }
     return { nodes: cyNodes, edges: cyEdges, hiddenCount: hidden.size };
@@ -481,8 +575,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       { selector: 'node[kind="pad"][typeClass="sink"]', style: { 'background-color': '#39271d', 'border-color': '#f5a65b', color: '#ffd9b3' } },
       { selector: 'node[kind="pad"][typeClass="src"]', style: { 'background-color': '#133330', 'border-color': '#4dd6c6', color: '#baf5ee' } },
       { selector: 'node.unlinked-pad', style: { 'border-style': 'dashed', opacity: .78 } },
+      { selector: 'node.bin-boundary-pad', style: { 'border-width': 2, 'z-index': 1004 } },
+      { selector: 'node.no-target-pad', style: { 'background-opacity': .35, 'border-style': 'dashed' } },
       { selector: 'node[kind="edge-label"]', style: { width: 'data(labelWidth)', height: 'data(labelHeight)', shape: 'round-rectangle', label: 'data(label)', 'background-color': '#091019', 'background-opacity': .94, 'border-width': 0, color: '#aebccc', 'font-size': 9, 'font-weight': 400, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-valign': 'center', 'text-halign': 'center', padding: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1003, 'overlay-opacity': 0 } },
       { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', 'overlay-opacity': 0 } },
+      { selector: 'edge[ghostConnector]', style: { 'line-style': 'dashed', 'line-color': '#8295aa', 'target-arrow-color': '#8295aa', width: 1.35 } },
       { selector: 'edge[synthetic]', style: { 'line-style': 'dashed', 'line-color': '#b78a59', 'target-arrow-color': '#b78a59' } },
       { selector: 'node.trace-dim', style: { opacity: .48 } },
       { selector: 'edge.trace-dim', style: { opacity: .28 } },
@@ -516,17 +613,26 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const coreNodes = target.union(target.descendants());
       const coreIds = new Set(coreNodes.map(node => node.id()));
       const padBadges = cy.nodes().filter(node => node.data('kind') === 'pad' && coreIds.has(node.data('ownerId')));
-      const incidentEdges = coreNodes.connectedEdges();
+      const seedEdges = coreNodes.connectedEdges();
+      const logicalIds = new Set(seedEdges.map(edge => edge.data('logicalEdgeId')));
+      const incidentEdges = cy.edges().filter(edge => logicalIds.has(edge.data('logicalEdgeId')));
       const incidentIds = new Set(incidentEdges.map(edge => edge.id()));
       const edgeLabels = cy.nodes().filter(node => node.data('kind') === 'edge-label' && incidentIds.has(node.data('edgeId')));
       focus = coreNodes.union(padBadges).union(incidentEdges).union(edgeLabels).union(incidentEdges.connectedNodes());
-      incidentEdges.filter(edge => coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-edge');
-      incidentEdges.filter(edge => !coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-in');
-      incidentEdges.filter(edge => coreNodes.contains(edge.source()) && !coreNodes.contains(edge.target())).addClass('trace-out');
+      incidentEdges.forEach(edge => {
+        const layoutSource = edge.data('layoutSource');
+        const layoutTarget = edge.data('layoutTarget');
+        const sourceInside = layoutSource ? coreIds.has(layoutSource) : coreNodes.contains(edge.source());
+        const targetInside = layoutTarget ? coreIds.has(layoutTarget) : coreNodes.contains(edge.target());
+        edge.addClass(sourceInside && targetInside ? 'trace-edge' : targetInside ? 'trace-in' : sourceInside ? 'trace-out' : 'trace-edge');
+      });
     } else {
-      const edgeLabel = cy.nodes().filter(node => node.data('kind') === 'edge-label' && node.data('edgeId') === target.id());
-      focus = target.union(edgeLabel).union(target.source()).union(target.target());
-      target.addClass('trace-edge');
+      const logicalId = target.data('logicalEdgeId');
+      const logicalEdges = cy.edges().filter(edge => edge.data('logicalEdgeId') === logicalId);
+      const logicalEdgeIds = new Set(logicalEdges.map(edge => edge.id()));
+      const edgeLabels = cy.nodes().filter(node => node.data('kind') === 'edge-label' && logicalEdgeIds.has(node.data('edgeId')));
+      focus = logicalEdges.union(edgeLabels).union(logicalEdges.connectedNodes());
+      logicalEdges.addClass('trace-edge');
     }
     cy.elements().not(focus).addClass('trace-dim');
     focus.filter('node').filter(isGraphNode).addClass('trace-node');
@@ -561,7 +667,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         state.selectedId = owner.id();
         cy.nodes().unselect();
         target.select();
-        focusTrace(owner);
+        focusTrace(target.data('boundary') ? target : owner);
         showDetails(target);
         return;
       }
@@ -648,6 +754,28 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const direction = pads[0].data('typeClass');
         const badgeHeight = 14;
         const gap = 4;
+        if (pads[0].data('boundary') && owner.isParent()) {
+          const box = owner.boundingBox({ includeLabels: false });
+          const top = box.y1 + 34;
+          const bottom = box.y2 - 14;
+          const entries = pads.map((pad, declarationOrder) => {
+            const target = cy.getElementById(pad.data('targetOwnerId'));
+            const desiredY = target.length ? target.position().y : owner.position().y;
+            return { pad, declarationOrder, desiredY: Math.max(top, Math.min(bottom, desiredY)), y: 0 };
+          }).sort((a, b) => a.desiredY - b.desiredY || a.declarationOrder - b.declarationOrder);
+          let cursor = top;
+          entries.forEach(entry => {
+            entry.y = Math.max(entry.desiredY, cursor);
+            cursor = entry.y + badgeHeight + gap;
+          });
+          const overflow = Math.max(0, cursor - gap - bottom);
+          if (overflow) entries.forEach(entry => { entry.y -= overflow; });
+          entries.forEach(({ pad, y }) => pad.position({
+            x: direction === 'src' ? box.x2 : box.x1,
+            y
+          }));
+          continue;
+        }
         const totalHeight = pads.length * badgeHeight + (pads.length - 1) * gap;
         const ownerPosition = owner.position();
         const ownerWidth = owner.outerWidth();
@@ -890,9 +1018,18 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       }).map(child => child.id());
       return boundary.length ? boundary : [...descendantIds];
     };
-    cy.edges().forEach((edge, index) => {
-      const sources = boundaryLeaves(edge.source(), 'source');
-      const targets = boundaryLeaves(edge.target(), 'target');
+    const seenLogicalEdges = new Set();
+    const layoutEdges = cy.edges().filter(edge => {
+      const logicalId = edge.data('logicalEdgeId');
+      if (edge.data('auxiliary') || !edge.data('layoutSource') || !edge.data('layoutTarget') || seenLogicalEdges.has(logicalId)) return false;
+      seenLogicalEdges.add(logicalId);
+      return true;
+    });
+    layoutEdges.forEach((edge, index) => {
+      const layoutSource = cy.getElementById(edge.data('layoutSource'));
+      const layoutTarget = cy.getElementById(edge.data('layoutTarget'));
+      const sources = boundaryLeaves(layoutSource, 'source');
+      const targets = boundaryLeaves(layoutTarget, 'target');
       sources.forEach((source, sourceIndex) => targets.forEach((target, targetIndex) => {
         if (source !== target) guide.setEdge(source, target, {}, `${edge.id()}:${index}:${sourceIndex}:${targetIndex}`);
       }));
@@ -903,8 +1040,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     // pads' declaration order from the DOT file for direct sibling branches.
     leaves.forEach(source => {
       const groups = new Map();
-      source.outgoers('edge').forEach(edge => {
-        const target = edge.target();
+      layoutEdges.filter(edge => edge.data('layoutSource') === source.id()).forEach(edge => {
+        const target = cy.getElementById(edge.data('layoutTarget'));
         if (!leafIds.has(target.id())) return;
         const position = guide.node(target.id());
         const pad = state.graph.pads.get(edge.data('sourcePadId'));
@@ -1090,7 +1227,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
   function showDetails(target) {
     if (target.isEdge()) return showEdge(target.data());
     const padId = target.data('padId');
-    if (padId) return showPad(state.graph.pads.get(padId), target.data('linked'));
+    if (padId) return showPad(state.graph.pads.get(padId), target.data('linked'), target.data());
     showItem(target.id());
   }
 
@@ -1106,9 +1243,12 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     $('inspectorToggle')?.addEventListener('click', () => toggleBin(id));
   }
 
-  function showPad(pad, visiblyLinked = pad.linked) {
+  function showPad(pad, visiblyLinked = pad.linked, view = {}) {
     const owner = state.graph.items.get(pad.element);
-    ui.details.innerHTML = `<div class="eyebrow">${esc(pad.direction)} pad</div><h2>${esc(pad.name)}</h2><div class="detail-grid"><dt>Element</dt><dd>${esc(owner?.name)}</dd><dt>Visible link</dt><dd>${visiblyLinked ? 'Yes' : 'No'}</dd><dt>Linked in DOT</dt><dd>${pad.linked ? 'Yes' : 'No'}</dd><dt>Flags</dt><dd>${esc(pad.flags || '—')}</dd><dt>DOT id</dt><dd>${esc(pad.id)}</dd></div>`;
+    const targetOwner = view.targetOwnerId ? state.graph.items.get(view.targetOwnerId) : null;
+    const targetPad = view.targetPadId ? state.graph.pads.get(view.targetPadId) : null;
+    const targetRow = view.boundary ? `<dt>Ghost target</dt><dd>${targetOwner ? `${esc(targetOwner.name)}${targetPad ? ':' + esc(targetPad.name) : ''}` : 'Not set'}</dd>` : '';
+    ui.details.innerHTML = `<div class="eyebrow">${esc(pad.direction)} pad</div><h2>${esc(pad.name)}</h2><div class="detail-grid"><dt>Element</dt><dd>${esc(owner?.name)}</dd>${targetRow}<dt>Visible link</dt><dd>${visiblyLinked ? 'Yes' : 'No'}</dd><dt>Linked in DOT</dt><dd>${pad.linked ? 'Yes' : 'No'}</dd><dt>Flags</dt><dd>${esc(pad.flags || '—')}</dd><dt>DOT id</dt><dd>${esc(pad.id)}</dd></div>`;
   }
 
   function showEdge(data) {
@@ -1180,7 +1320,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     state.cy.elements().addClass('search-dim');
     matches.removeClass('search-dim').addClass('search-match');
     matchedPadBadges.removeClass('search-dim');
-    const matchedEdges = matches.connectedEdges();
+    const matchedLogicalIds = new Set(matches.connectedEdges().map(edge => edge.data('logicalEdgeId')));
+    const matchedEdges = state.cy.edges().filter(edge => matchedLogicalIds.has(edge.data('logicalEdgeId')));
     matchedEdges.removeClass('search-dim');
     const matchedEdgeIds = new Set(matchedEdges.map(edge => edge.id()));
     state.cy.nodes().filter(node => node.data('kind') === 'edge-label' && matchedEdgeIds.has(node.data('edgeId'))).removeClass('search-dim');
