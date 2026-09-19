@@ -284,7 +284,7 @@ import { projectedEdgeKey } from './model.js';
       const item = g.items.get(id);
       return item?.kind === 'bin' && !state.collapsed.has(id);
     }));
-    const padsEquivalent = (a, b) => a === b || g.padAliases.get(a)?.has(b);
+    const padsEquivalent = (a, b) => a === b || g.padAliases.get(a)?.has(b) || g.padAliases.get(b)?.has(a);
 
     const outgoing = new Map();
     for (const e of baseEdges) {
@@ -332,17 +332,17 @@ import { projectedEdgeKey } from './model.js';
       }
     }
 
-    const unlinkedPadsByOwner = new Map();
-    if (state.options.unlinkedPads) {
-      for (const pad of g.pads.values()) {
-        if (pad.linked) continue;
-        const owner = rep(pad.element);
-        if (!nodeSet.has(owner) || hidden.has(owner)) continue;
-        const groups = unlinkedPadsByOwner.get(owner) || { sink: [], src: [] };
-        (pad.direction === 'src' ? groups.src : groups.sink).push(pad);
-        unlinkedPadsByOwner.set(owner, groups);
-      }
+    const padsByOwner = new Map();
+    for (const pad of g.pads.values()) {
+      if (!pad.linked && !state.options.unlinkedPads) continue;
+      const owner = pad.element;
+      if (!nodeSet.has(owner) || hidden.has(owner)) continue;
+      const groups = padsByOwner.get(owner) || { sink: [], src: [] };
+      (pad.direction === 'src' ? groups.src : groups.sink).push(pad);
+      padsByOwner.set(owner, groups);
     }
+    const visiblePadId = (owner, direction, padId) =>
+      (padsByOwner.get(owner)?.[direction] || []).find(pad => padsEquivalent(pad.id, padId))?.id || null;
 
     const cyNodes = nodes.map(id => {
       const item = g.items.get(id);
@@ -352,29 +352,32 @@ import { projectedEdgeKey } from './model.js';
         if (p !== id && nodeSet.has(p) && !state.collapsed.has(p)) parent = p;
       }
       const collapsed = state.collapsed.has(id);
-      const padGroups = unlinkedPadsByOwner.get(id);
+      const padGroups = padsByOwner.get(id);
       const padRows = padGroups ? Math.max(padGroups.sink.length, padGroups.src.length) : 0;
       const baseHeight = collapsed ? 76 : isQueue(item) ? 34 : isTee(item) ? 74 : 48;
       const nodeHeight = padRows ? Math.max(baseHeight, 42 + padRows * 18) : baseHeight;
-      return { data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), collapsed, hasPadBadges: padRows > 0, nodeHeight } };
+      const nodeLabelOffsetY = padRows ? -(nodeHeight / 2 - 13) : 0;
+      return {
+        data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), collapsed, nodeHeight, nodeLabelOffsetY },
+        classes: padRows ? 'has-pad-badges' : ''
+      };
     });
     const cyEdges = [...edgeMap.values()].map((e, i) => {
       const caps = [...new Set(e.links.map(l => formatCaps(l.caps)).filter(Boolean))].join('\n\n');
       const label = state.options.caps === 'full' ? caps : state.options.caps === 'media' ? mediaType(caps) : '';
       const labelMetrics = capsLabelMetrics(label);
-      return { data: { id: `edge-${i}`, source: e.source, target: e.target, label, labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, labelOffsetX: 0, labelOffsetY: labelMetrics.above, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
+      return { data: { id: `edge-${i}`, source: e.source, target: e.target, label, labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, labelOffsetX: 0, labelOffsetY: labelMetrics.above, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId: visiblePadId(e.source, 'src', e.links[0]?.sourcePad), targetPadId: visiblePadId(e.target, 'sink', e.links.at(-1)?.sinkPad), segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
     });
 
-    if (state.options.unlinkedPads) {
-      for (const [owner, groups] of unlinkedPadsByOwner) {
-        for (const pad of [...groups.sink, ...groups.src]) {
-          const id = `pad:${pad.id}`;
-          const padWidth = Math.max(30, Math.min(56, 14 + pad.name.length * 5));
-          cyNodes.push({
-            data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id, ownerId: owner, padWidth },
-            grabbable: false
-          });
-        }
+    for (const [owner, groups] of padsByOwner) {
+      for (const pad of [...groups.sink, ...groups.src]) {
+        const id = `pad:${pad.id}`;
+        const padWidth = Math.max(30, Math.min(56, 14 + pad.name.length * 5));
+        cyNodes.push({
+          data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id, ownerId: owner, padWidth, linked: pad.linked },
+          classes: pad.linked ? 'linked-pad' : 'unlinked-pad',
+          grabbable: false
+        });
       }
     }
     return { nodes: cyNodes, edges: cyEdges, hiddenCount: hidden.size };
@@ -389,10 +392,11 @@ import { projectedEdgeKey } from './model.js';
       { selector: 'node[typeClass="queue"]', style: { width: 76, height: 34, 'font-size': 10, 'border-style': 'dashed', 'border-color': '#718198' } },
       { selector: 'node[kind="bin"][collapsed]', style: { 'background-color': '#14202b', 'border-color': '#58a6b7', 'border-width': 2, width: 210, height: 76, 'text-wrap': 'wrap', 'text-max-width': 190, 'font-size': 11, 'line-height': 1.25, 'background-image-opacity': 0 } },
       { selector: 'node[kind="bin"]:parent', style: { 'background-color': '#0e1722', 'background-opacity': .72, 'border-color': '#30445b', 'border-width': 1.5, 'border-style': 'dashed', 'padding': 28, 'text-valign': 'top', 'text-halign': 'left', 'font-size': 11, color: '#92a8bd', 'z-compound-depth': 'bottom' } },
-      { selector: 'node[hasPadBadges = true]', style: { height: 'data(nodeHeight)', 'text-valign': 'top', 'text-margin-y': 8 } },
+      { selector: 'node.has-pad-badges', style: { height: 'data(nodeHeight)', 'text-valign': 'center', 'text-margin-y': 'data(nodeLabelOffsetY)' } },
       { selector: 'node[kind="pad"]', style: { width: 'data(padWidth)', height: 14, shape: 'round-rectangle', 'font-size': 8, 'font-weight': 600, 'background-color': '#182536', 'border-width': 1, 'border-color': '#74849b', color: '#dbe7f2', 'text-wrap': 'ellipsis', 'text-max-width': 50, 'text-valign': 'center', 'text-halign': 'center', 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1001 } },
       { selector: 'node[kind="pad"][typeClass="sink"]', style: { 'background-color': '#39271d', 'border-color': '#f5a65b', color: '#ffd9b3' } },
       { selector: 'node[kind="pad"][typeClass="src"]', style: { 'background-color': '#133330', 'border-color': '#4dd6c6', color: '#baf5ee' } },
+      { selector: 'node.unlinked-pad', style: { 'border-style': 'dashed', opacity: .78 } },
       { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', label: 'data(label)', color: '#aebccc', 'font-size': 9, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-margin-x': 'data(labelOffsetX)', 'text-margin-y': 'data(labelOffsetY)', 'text-background-color': '#091019', 'text-background-opacity': .94, 'text-background-padding': 3, 'text-rotation': 'none', 'overlay-opacity': 0 } },
       { selector: 'edge[synthetic]', style: { 'line-style': 'dashed', 'line-color': '#b78a59', 'target-arrow-color': '#b78a59' } },
       { selector: 'node.trace-dim', style: { opacity: .48 } },
@@ -540,18 +544,22 @@ import { projectedEdgeKey } from './model.js';
     };
     const assignPorts = (node, side) => {
       const edges = [...(side === 'source' ? node.outgoers('edge') : node.incomers('edge'))]
-        .filter(edge => !edge.data('stub'))
         .sort((a, b) => {
           const aPeer = side === 'source' ? a.target() : a.source();
           const bPeer = side === 'source' ? b.target() : b.source();
           return aPeer.position('y') - bPeer.position('y') || aPeer.id().localeCompare(bPeer.id());
         });
-      if (edges.length < 2) return;
+      if (!edges.length) return;
       const spread = Math.min(38, 24 + (edges.length - 2) * 7);
       edges.forEach((edge, index) => {
-        const offset = -spread + index * (2 * spread / (edges.length - 1));
+        const padId = edge.data(`${side}PadId`);
+        const pad = padId ? cy.getElementById(`pad:${padId}`) : null;
+        const fallbackOffset = edges.length < 2 ? 0 : -spread + index * (2 * spread / (edges.length - 1));
+        const offset = pad?.length && pad.data('ownerId') === node.id()
+          ? (pad.position('y') - node.position('y')) / node.outerHeight() * 100
+          : fallbackOffset;
         edge.data(`${side}Endpoint`, endpoint(node, side, offset));
-        edge.scratch(`_${side}Turn`, 42 + index * (16 / (edges.length - 1)));
+        edge.scratch(`_${side}Turn`, edges.length < 2 ? 50 : 42 + index * (16 / (edges.length - 1)));
       });
     };
 
