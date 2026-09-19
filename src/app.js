@@ -770,10 +770,13 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           });
           const overflow = Math.max(0, cursor - gap - bottom);
           if (overflow) entries.forEach(entry => { entry.y -= overflow; });
-          entries.forEach(({ pad, y }) => pad.position({
-            x: direction === 'src' ? box.x2 : box.x1,
-            y
-          }));
+          entries.forEach(({ pad, y }, index) => {
+            pad.scratch('_boundaryOrder', index);
+            pad.position({
+              x: direction === 'src' ? box.x2 : box.x1,
+              y
+            });
+          });
           continue;
         }
         const totalHeight = pads.length * badgeHeight + (pads.length - 1) * gap;
@@ -782,6 +785,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const ownerHeight = owner.outerHeight();
         const firstY = ownerPosition.y + ownerHeight / 2 - 5 - totalHeight + badgeHeight / 2;
         pads.forEach((pad, index) => {
+          pad.scratch('_boundaryOrder', index);
           const width = pad.outerWidth();
           pad.position({
             x: ownerPosition.x + (direction === 'src' ? ownerWidth / 2 - width / 2 - 4 : -ownerWidth / 2 + width / 2 + 4),
@@ -815,7 +819,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           ? (pad.position('y') - node.position('y')) / node.outerHeight() * 100
           : fallbackOffset;
         edge.data(`${side}Endpoint`, endpoint(node, side, offset));
-        edge.scratch(`_${side}Turn`, edges.length < 2 ? 50 : 42 + index * (16 / (edges.length - 1)));
+        // A single edge does not claim a turn lane. This lets fan-in at the
+        // opposite endpoint control the bend instead of every one-edge source
+        // forcing all converging routes onto the same 50% track.
+        edge.scratch(`_${side}Turn`, edges.length < 2 ? null : 42 + index * (16 / (edges.length - 1)));
+        edge.scratch(`_${side}StubClearance`, 22 + index * 10);
       });
     };
 
@@ -851,7 +859,17 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const compoundObstacles = graphNodes.filter(node => node.isParent());
     const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
     const reservedRoutes = [];
-    const ancestorIds = node => new Set(node?.length ? node.ancestors().map(parent => parent.id()) : []);
+    const ancestorIds = node => {
+      if (!node?.length) return new Set();
+      if (node.data('kind') !== 'pad') return new Set(node.ancestors().map(parent => parent.id()));
+
+      // Boundary pads are overlays rather than compound children. Recover
+      // their logical ancestry from the bin they represent so a route within
+      // an outer bin does not escape that bin and then re-enter it.
+      const owner = cy.getElementById(node.data('ownerId'));
+      if (!owner.length) return new Set();
+      return new Set([owner.id(), ...owner.ancestors().map(parent => parent.id())]);
+    };
     const edgeObstacles = edge => {
       const sourceAncestors = ancestorIds(edge.source());
       const targetAncestors = ancestorIds(edge.target());
@@ -924,8 +942,13 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const crossesCompound = normalRoute && routeObstacleScore(normalRoute, obstacleEntries, true) > 0;
       if (normalTurnRatio == null || crossesCompound) {
         const clearance = 22;
-        const sourceStubX = source.x + clearance;
-        const targetStubX = target.x - clearance;
+        const padClearance = node => node.data('kind') === 'pad'
+          ? clearance + (node.scratch('_boundaryOrder') || 0) * 10
+          : null;
+        const sourceClearance = padClearance(edge.source()) || edge.scratch('_sourceStubClearance') || clearance;
+        const targetClearance = padClearance(edge.target()) || edge.scratch('_targetStubClearance') || clearance;
+        const sourceStubX = source.x + sourceClearance;
+        const targetStubX = target.x - targetClearance;
         const midpointY = (source.y + target.y) / 2;
         const laneCandidates = [...new Set([
           midpointY,
@@ -981,6 +1004,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         edge.data('taxiTurn', '50%');
         edge.scratch('_sourceTurn', null);
         edge.scratch('_targetTurn', null);
+        edge.scratch('_sourceStubClearance', null);
+        edge.scratch('_targetStubClearance', null);
       });
       graphNodes.forEach(node => {
         assignPorts(node, 'source');
