@@ -1,5 +1,5 @@
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
-import { projectedEdgeKey } from './model.js';
+import { preferredPadId, projectedEdgeKey } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -342,7 +342,7 @@ import { projectedEdgeKey } from './model.js';
       padsByOwner.set(owner, groups);
     }
     const visiblePadId = (owner, direction, padId) =>
-      (padsByOwner.get(owner)?.[direction] || []).find(pad => padsEquivalent(pad.id, padId))?.id || null;
+      preferredPadId(padsByOwner.get(owner)?.[direction] || [], padId, padsEquivalent);
 
     const cyNodes = nodes.map(id => {
       const item = g.items.get(id);

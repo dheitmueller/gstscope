@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
-import { projectedEdgeKey } from '../src/model.js';
+import { preferredPadId, projectedEdgeKey } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -41,5 +41,11 @@ const video = { ...shared, links: [{ sourcePad: 'video-src', sinkPad: 'video-sin
 const audio = { ...shared, links: [{ sourcePad: 'audio-src', sinkPad: 'audio-sink' }] };
 assert.notEqual(projectedEdgeKey(video), projectedEdgeKey(audio));
 assert.equal(projectedEdgeKey(video), projectedEdgeKey({ ...video, links: [...video.links] }));
+
+const aliasedPads = [{ id: 'proxypad9' }, { id: 'video_0' }];
+const aliases = new Set(['proxypad9:video_0', 'video_0:proxypad9']);
+const equivalent = (a, b) => a === b || aliases.has(`${a}:${b}`);
+assert.equal(preferredPadId(aliasedPads, 'video_0', equivalent), 'video_0');
+assert.equal(preferredPadId(aliasedPads, 'internal-video-src', (a, b) => a === 'video_0' && b === 'internal-video-src'), 'video_0');
 
 console.log('Validated orthogonal routing control points');
