@@ -741,8 +741,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const labelBoxes = [];
       const labelObstacles = obstacles.map(node => node.boundingBox({ includeLabels: false }));
       cy.edges().forEach(edge => {
-        const source = edge.source().position();
-        const target = edge.target().position();
+        const source = endpointPosition(edge, 'source');
+        const target = endpointPosition(edge, 'target');
         const dx = Math.abs(target.x - source.x);
         const dy = Math.abs(target.y - source.y);
         const vertical = dy > Math.max(80, dx * .65);
