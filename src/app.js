@@ -506,10 +506,42 @@ import { orthogonalSegmentData } from './geometry.js';
       };
     };
 
+    const obstacles = cy.nodes().filter(node => !node.isParent());
+    const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
+    const chooseTurnRatio = (edge, source, target) => {
+      const preferred = edge.scratch('_routeTurn') ?? .5;
+      if (target.x - source.x < 40) return preferred;
+      const candidates = [...new Set([
+        preferred, preferred - .2, preferred - .1, preferred + .1, preferred + .2, .35, .5, .65
+      ].map(value => Math.max(.15, Math.min(.85, value)).toFixed(3)))].map(Number);
+      let best = preferred;
+      let bestScore = Infinity;
+      for (const ratio of candidates) {
+        const turnX = source.x + (target.x - source.x) * ratio;
+        let score = Math.abs(ratio - preferred);
+        obstacles.forEach(node => {
+          if (node.same(edge.source()) || node.same(edge.target())) return;
+          const box = node.boundingBox({ includeLabels: false });
+          const pad = 9;
+          const x1 = box.x1 - pad, x2 = box.x2 + pad;
+          const y1 = box.y1 - pad, y2 = box.y2 + pad;
+          const firstHorizontal = source.y >= y1 && source.y <= y2 && overlaps(source.x, turnX, x1, x2);
+          const vertical = turnX >= x1 && turnX <= x2 && overlaps(source.y, target.y, y1, y2);
+          const lastHorizontal = target.y >= y1 && target.y <= y2 && overlaps(turnX, target.x, x1, x2);
+          if (firstHorizontal) score += 12;
+          if (vertical) score += 10;
+          if (lastHorizontal) score += 12;
+        });
+        if (score < bestScore) { bestScore = score; best = ratio; }
+      }
+      return best;
+    };
+
     const applySegments = edge => {
       const source = endpointPosition(edge, 'source');
       const target = endpointPosition(edge, 'target');
-      const geometry = orthogonalSegmentData(source, target, edge.scratch('_routeTurn'));
+      const turnRatio = chooseTurnRatio(edge, source, target);
+      const geometry = orthogonalSegmentData(source, target, turnRatio);
       if (!geometry) {
         edge.data('segmentWeights', '0.5');
         edge.data('segmentDistances', '0');
