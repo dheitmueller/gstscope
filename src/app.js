@@ -1,5 +1,5 @@
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
-import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from './model.js';
+import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -521,8 +521,23 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     });
     cy.on('mouseout', 'node[kind="pad"]', hidePadTooltip);
     cy.on('pan zoom resize', hidePadTooltip);
-    cy.on('tap', 'node[kind="bin"]', evt => {
-      const now = Date.now(), id = evt.target.id();
+    cy.on('tap', evt => {
+      const now = Date.now();
+      if (state.lastTap.badge && now - state.lastTap.at < 420) {
+        state.lastTap = { id: null, at: 0 };
+        return;
+      }
+      const badgeId = topRightBadgeTarget(
+        cy.nodes('node[kind="bin"][collapsible]').map(node => ({ id: node.id(), ...node.boundingBox({ includeLabels: false }) })),
+        evt.position
+      );
+      if (badgeId) {
+        state.lastTap = { id: badgeId, at: now, badge: true };
+        toggleBin(badgeId);
+        return;
+      }
+      if (!evt.target.isNode?.() || evt.target.data('kind') !== 'bin') return;
+      const id = evt.target.id();
       if (state.lastTap.id === id && now - state.lastTap.at < 420) toggleBin(id);
       state.lastTap = { id, at: now };
     });

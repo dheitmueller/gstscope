@@ -60,3 +60,9 @@ export function isolatedSiblingPlacements(items, gap = 62) {
     return placement;
   });
 }
+
+export function topRightBadgeTarget(items, point, hitSize = 30) {
+  return items
+    .filter(item => point.x >= item.x2 - hitSize && point.x <= item.x2 && point.y >= item.y1 && point.y <= item.y1 + hitSize)
+    .sort((a, b) => (a.x2 - a.x1) * (a.y2 - a.y1) - (b.x2 - b.x1) * (b.y2 - b.y1))[0]?.id || null;
+}

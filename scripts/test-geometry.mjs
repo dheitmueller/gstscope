@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
-import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from '../src/model.js';
+import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -94,6 +94,17 @@ assert.deepEqual(
     { id: 'identity', x: 40, y: 100, width: 80, height: 48, connected: false }
   ]),
   [{ id: 'identity', x: 190, y: 210 }]
+);
+assert.equal(
+  topRightBadgeTarget([
+    { id: 'playsink', x1: 0, y1: 0, x2: 500, y2: 300 },
+    { id: 'vbin', x1: 200, y1: 100, x2: 480, y2: 280 }
+  ], { x: 470, y: 110 }),
+  'vbin'
+);
+assert.equal(
+  topRightBadgeTarget([{ id: 'vbin', x1: 200, y1: 100, x2: 480, y2: 280 }], { x: 300, y: 110 }),
+  null
 );
 assert.equal(
   padsShareFlowChannel(
