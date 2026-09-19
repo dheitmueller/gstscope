@@ -615,6 +615,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       placePadBadges();
       applyEdgeGeometry();
       if (fit) cy.fit(undefined, 42);
+      settleAuxiliaryGeometry(cy, fit, 42);
     }
     clearTimeout(startupTimer);
     ui.loading.classList.add('hidden');
@@ -647,11 +648,20 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const ownerPosition = owner.position();
         const ownerWidth = owner.outerWidth();
         const ownerHeight = owner.outerHeight();
-        const firstY = ownerPosition.y + ownerHeight / 2 - 5 - totalHeight + badgeHeight / 2;
+        // Leaf-element pads sit along the lower part of the element, while
+        // expanded-bin pads stay by the bin header. Putting compound pads at
+        // a distant side or bottom makes them appear detached when a bin grows
+        // very large, so keep their left/right grouping near the header.
+        const firstY = owner.isParent()
+          ? ownerPosition.y - ownerHeight / 2 + 24 + badgeHeight / 2
+          : ownerPosition.y + ownerHeight / 2 - 5 - totalHeight + badgeHeight / 2;
         pads.forEach((pad, index) => {
           const width = pad.outerWidth();
+          const sideOffset = owner.isParent()
+            ? Math.max(0, Math.min(170, ownerWidth / 2 - width / 2 - 12))
+            : ownerWidth / 2 - width / 2 - 4;
           pad.position({
-            x: ownerPosition.x + (direction === 'src' ? ownerWidth / 2 - width / 2 - 4 : -ownerWidth / 2 + width / 2 + 4),
+            x: ownerPosition.x + (direction === 'src' ? sideOffset : -sideOffset),
             y: firstY + index * (badgeHeight + gap)
           });
         });
@@ -842,6 +852,22 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     });
   }
 
+  function settleAuxiliaryGeometry(cy, fit = false, padding = 44) {
+    let passes = 2;
+    const settle = () => {
+      if (state.cy !== cy) return;
+      placePadBadges();
+      applyEdgeGeometry();
+      passes--;
+      if (passes > 0) requestAnimationFrame(settle);
+      else {
+        if (fit) cy.fit(undefined, padding);
+        rememberPositions();
+      }
+    };
+    requestAnimationFrame(settle);
+  }
+
   function runLayout(fit = true, previousVisible = null) {
     if (!state.cy) return;
     const cy = state.cy;
@@ -1023,6 +1049,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     applyEdgeGeometry();
     if (fit) cy.fit(undefined, 44);
     rememberPositions();
+    settleAuxiliaryGeometry(cy, fit, 44);
   }
 
   function toggleBin(id) {
