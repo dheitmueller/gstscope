@@ -332,6 +332,18 @@ import { projectedEdgeKey } from './model.js';
       }
     }
 
+    const unlinkedPadsByOwner = new Map();
+    if (state.options.unlinkedPads) {
+      for (const pad of g.pads.values()) {
+        if (pad.linked) continue;
+        const owner = rep(pad.element);
+        if (!nodeSet.has(owner) || hidden.has(owner)) continue;
+        const groups = unlinkedPadsByOwner.get(owner) || { sink: [], src: [] };
+        (pad.direction === 'src' ? groups.src : groups.sink).push(pad);
+        unlinkedPadsByOwner.set(owner, groups);
+      }
+    }
+
     const cyNodes = nodes.map(id => {
       const item = g.items.get(id);
       let parent;
@@ -340,7 +352,11 @@ import { projectedEdgeKey } from './model.js';
         if (p !== id && nodeSet.has(p) && !state.collapsed.has(p)) parent = p;
       }
       const collapsed = state.collapsed.has(id);
-      return { data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), collapsed } };
+      const padGroups = unlinkedPadsByOwner.get(id);
+      const padRows = padGroups ? Math.max(padGroups.sink.length, padGroups.src.length) : 0;
+      const baseHeight = collapsed ? 76 : isQueue(item) ? 34 : isTee(item) ? 74 : 48;
+      const nodeHeight = padRows ? Math.max(baseHeight, 42 + padRows * 18) : baseHeight;
+      return { data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), collapsed, hasPadBadges: padRows > 0, nodeHeight } };
     });
     const cyEdges = [...edgeMap.values()].map((e, i) => {
       const caps = [...new Set(e.links.map(l => formatCaps(l.caps)).filter(Boolean))].join('\n\n');
@@ -350,13 +366,15 @@ import { projectedEdgeKey } from './model.js';
     });
 
     if (state.options.unlinkedPads) {
-      for (const pad of g.pads.values()) {
-        if (pad.linked) continue;
-        const owner = rep(pad.element);
-        if (!nodeSet.has(owner) || hidden.has(owner)) continue;
-        const id = `pad:${pad.id}`;
-        cyNodes.push({ data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id } });
-        cyEdges.push({ data: { id: `stub:${pad.id}`, source: pad.direction === 'src' ? owner : id, target: pad.direction === 'src' ? id : owner, label: '', labelAbove: 0, labelBeside: 0, labelOffsetX: 0, labelOffsetY: 0, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', segmentDistances: '0', segmentWeights: '0.5', stub: true } });
+      for (const [owner, groups] of unlinkedPadsByOwner) {
+        for (const pad of [...groups.sink, ...groups.src]) {
+          const id = `pad:${pad.id}`;
+          const padWidth = Math.max(30, Math.min(56, 14 + pad.name.length * 5));
+          cyNodes.push({
+            data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id, ownerId: owner, padWidth },
+            grabbable: false
+          });
+        }
       }
     }
     return { nodes: cyNodes, edges: cyEdges, hiddenCount: hidden.size };
@@ -371,10 +389,12 @@ import { projectedEdgeKey } from './model.js';
       { selector: 'node[typeClass="queue"]', style: { width: 76, height: 34, 'font-size': 10, 'border-style': 'dashed', 'border-color': '#718198' } },
       { selector: 'node[kind="bin"][collapsed]', style: { 'background-color': '#14202b', 'border-color': '#58a6b7', 'border-width': 2, width: 210, height: 76, 'text-wrap': 'wrap', 'text-max-width': 190, 'font-size': 11, 'line-height': 1.25, 'background-image-opacity': 0 } },
       { selector: 'node[kind="bin"]:parent', style: { 'background-color': '#0e1722', 'background-opacity': .72, 'border-color': '#30445b', 'border-width': 1.5, 'border-style': 'dashed', 'padding': 28, 'text-valign': 'top', 'text-halign': 'left', 'font-size': 11, color: '#92a8bd', 'z-compound-depth': 'bottom' } },
-      { selector: 'node[kind="pad"]', style: { width: 26, height: 26, shape: 'diamond', 'font-size': 8, 'background-color': '#222d3e', 'border-style': 'dotted', 'border-color': '#74849b' } },
+      { selector: 'node[hasPadBadges = true]', style: { height: 'data(nodeHeight)', 'text-valign': 'top', 'text-margin-y': 8 } },
+      { selector: 'node[kind="pad"]', style: { width: 'data(padWidth)', height: 14, shape: 'round-rectangle', 'font-size': 8, 'font-weight': 600, 'background-color': '#182536', 'border-width': 1, 'border-color': '#74849b', color: '#dbe7f2', 'text-wrap': 'ellipsis', 'text-max-width': 50, 'text-valign': 'center', 'text-halign': 'center', 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1001 } },
+      { selector: 'node[kind="pad"][typeClass="sink"]', style: { 'background-color': '#39271d', 'border-color': '#f5a65b', color: '#ffd9b3' } },
+      { selector: 'node[kind="pad"][typeClass="src"]', style: { 'background-color': '#133330', 'border-color': '#4dd6c6', color: '#baf5ee' } },
       { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', label: 'data(label)', color: '#aebccc', 'font-size': 9, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-margin-x': 'data(labelOffsetX)', 'text-margin-y': 'data(labelOffsetY)', 'text-background-color': '#091019', 'text-background-opacity': .94, 'text-background-padding': 3, 'text-rotation': 'none', 'overlay-opacity': 0 } },
       { selector: 'edge[synthetic]', style: { 'line-style': 'dashed', 'line-color': '#b78a59', 'target-arrow-color': '#b78a59' } },
-      { selector: 'edge[stub]', style: { 'line-style': 'dotted', width: 1, 'line-color': '#56657a', 'target-arrow-color': '#56657a' } },
       { selector: 'node.trace-dim', style: { opacity: .48 } },
       { selector: 'edge.trace-dim', style: { opacity: .28 } },
       { selector: 'node.trace-node', style: { 'border-color': '#77e6da', 'border-width': 2.5, 'z-index': 998 } },
@@ -384,13 +404,14 @@ import { projectedEdgeKey } from './model.js';
       { selector: '.search-match', style: { 'border-color': '#f5d06f', 'border-width': 4 } },
       { selector: '.search-dim', style: { opacity: .2 } },
       { selector: 'node:selected', style: { 'background-color': '#2b3d54', 'border-color': '#ffffff', 'border-width': 4, 'underlay-color': '#4dd6c6', 'underlay-opacity': .32, 'underlay-padding': 8, 'z-index': 999 } },
+      { selector: 'node[kind="pad"]:selected', style: { 'border-width': 2, 'border-color': '#ffffff', 'underlay-opacity': 0, 'z-index': 1002 } },
       { selector: 'edge:selected', style: { 'line-color': '#ffffff', 'target-arrow-color': '#ffffff', width: 4, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 999 } }
     ];
   }
 
   function rememberPositions() {
     if (!state.cy) return;
-    state.cy.nodes().forEach(n => state.positions.set(n.id(), { ...n.position() }));
+    state.cy.nodes().filter(n => n.data('kind') !== 'pad').forEach(n => state.positions.set(n.id(), { ...n.position() }));
   }
 
   function clearTrace() {
@@ -404,8 +425,10 @@ import { projectedEdgeKey } from './model.js';
     let focus;
     if (target.isNode()) {
       const coreNodes = target.union(target.descendants());
+      const coreIds = new Set(coreNodes.map(node => node.id()));
+      const padBadges = cy.nodes().filter(node => node.data('kind') === 'pad' && coreIds.has(node.data('ownerId')));
       const incidentEdges = coreNodes.connectedEdges();
-      focus = coreNodes.union(incidentEdges).union(incidentEdges.connectedNodes());
+      focus = coreNodes.union(padBadges).union(incidentEdges).union(incidentEdges.connectedNodes());
       incidentEdges.filter(edge => coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-edge');
       incidentEdges.filter(edge => !coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-in');
       incidentEdges.filter(edge => coreNodes.contains(edge.source()) && !coreNodes.contains(edge.target())).addClass('trace-out');
@@ -428,7 +451,21 @@ import { projectedEdgeKey } from './model.js';
       minZoom: .07, maxZoom: 3.5, boxSelectionEnabled: false
     });
     const cy = state.cy;
-    cy.on('tap', 'node', evt => { state.selectedId = evt.target.id(); focusTrace(evt.target); showDetails(evt.target); });
+    cy.on('tap', 'node', evt => {
+      const target = evt.target;
+      if (target.data('kind') === 'pad') {
+        const owner = cy.getElementById(target.data('ownerId'));
+        state.selectedId = owner.id();
+        cy.nodes().unselect();
+        target.select();
+        focusTrace(owner);
+        showDetails(target);
+        return;
+      }
+      state.selectedId = target.id();
+      focusTrace(target);
+      showDetails(target);
+    });
     cy.on('tap', 'edge', evt => { state.selectedId = null; focusTrace(evt.target); showDetails(evt.target); });
     cy.on('tap', evt => { if (evt.target === cy) { state.selectedId = null; clearTrace(); } });
     cy.on('tap', 'node[kind="bin"]', evt => {
@@ -437,23 +474,60 @@ import { projectedEdgeKey } from './model.js';
       state.lastTap = { id, at: now };
     });
     cy.on('dragfree', 'node', evt => {
+      if (evt.target.data('kind') === 'pad') return;
       state.positions.set(evt.target.id(), { ...evt.target.position() });
+      placePadBadges();
       applyEdgeGeometry();
     });
 
     if (layout) runLayout(fit, previousVisible);
     else {
       const center = { x: cy.width() / 2, y: cy.height() / 2 };
-      cy.nodes().forEach((n, i) => n.position(state.positions.get(n.id()) || { x: center.x + (i % 5) * 28, y: center.y + Math.floor(i / 5) * 28 }));
+      cy.nodes().filter(n => n.data('kind') !== 'pad').forEach((n, i) => n.position(state.positions.get(n.id()) || { x: center.x + (i % 5) * 28, y: center.y + Math.floor(i / 5) * 28 }));
+      placePadBadges();
       applyEdgeGeometry();
       if (fit) cy.fit(undefined, 42);
     }
     ui.loading.classList.add('hidden');
-    ui.stats.textContent = `${state.graph.items.size - 1} elements · ${state.graph.links.length} links · ${view.nodes.length} visible · ${view.hiddenCount} contracted`;
+    const visibleElements = view.nodes.filter(node => node.data.kind !== 'pad').length;
+    ui.stats.textContent = `${state.graph.items.size - 1} elements · ${state.graph.links.length} links · ${visibleElements} visible · ${view.hiddenCount} contracted`;
     syncControls();
     const selected = state.selectedId ? cy.getElementById(state.selectedId) : null;
     if (selected?.length) { selected.select(); focusTrace(selected); showItem(state.selectedId); }
     if (ui.search.value.trim()) requestAnimationFrame(search);
+  }
+
+  function placePadBadges() {
+    const cy = state.cy;
+    if (!cy) return;
+    const groups = new Map();
+    cy.nodes().filter(node => node.data('kind') === 'pad').forEach(pad => {
+      const key = `${pad.data('ownerId')}|${pad.data('typeClass')}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(pad);
+    });
+    cy.batch(() => {
+      for (const pads of groups.values()) {
+        pads.sort((a, b) => a.data('label').localeCompare(b.data('label')) || a.id().localeCompare(b.id()));
+        const owner = cy.getElementById(pads[0].data('ownerId'));
+        if (!owner.length) continue;
+        const direction = pads[0].data('typeClass');
+        const badgeHeight = 14;
+        const gap = 4;
+        const totalHeight = pads.length * badgeHeight + (pads.length - 1) * gap;
+        const ownerPosition = owner.position();
+        const ownerWidth = owner.outerWidth();
+        const ownerHeight = owner.outerHeight();
+        const firstY = ownerPosition.y + ownerHeight / 2 - 5 - totalHeight + badgeHeight / 2;
+        pads.forEach((pad, index) => {
+          const width = pad.outerWidth();
+          pad.position({
+            x: ownerPosition.x + (direction === 'src' ? ownerWidth / 2 - width / 2 - 4 : -ownerWidth / 2 + width / 2 + 4),
+            y: firstY + index * (badgeHeight + gap)
+          });
+        });
+      }
+    });
   }
 
   function applyEdgeGeometry() {
@@ -508,7 +582,8 @@ import { projectedEdgeKey } from './model.js';
       };
     };
 
-    const obstacles = cy.nodes().filter(node => !node.isParent());
+    const graphNodes = cy.nodes().filter(node => node.data('kind') !== 'pad');
+    const obstacles = graphNodes.filter(node => !node.isParent());
     const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
     const reservedRoutes = [];
     const chooseTurnRatio = (edge, source, target) => {
@@ -558,7 +633,7 @@ import { projectedEdgeKey } from './model.js';
     };
 
     cy.batch(() => {
-      const graphBounds = cy.nodes().boundingBox({ includeLabels: false });
+      const graphBounds = graphNodes.boundingBox({ includeLabels: false });
       cy.edges().forEach(edge => {
         edge.data('sourceEndpoint', endpoint(edge.source(), 'source', 0));
         edge.data('targetEndpoint', endpoint(edge.target(), 'target', 0));
@@ -566,7 +641,7 @@ import { projectedEdgeKey } from './model.js';
         edge.scratch('_sourceTurn', null);
         edge.scratch('_targetTurn', null);
       });
-      cy.nodes().forEach(node => {
+      graphNodes.forEach(node => {
         assignPorts(node, 'source');
         assignPorts(node, 'target');
       });
@@ -595,8 +670,9 @@ import { projectedEdgeKey } from './model.js';
   function runLayout(fit = true, previousVisible = null) {
     if (!state.cy) return;
     const cy = state.cy;
-    const nodeCount = cy.nodes().length;
-    const leaves = cy.nodes().filter(node => !node.isParent());
+    const graphNodes = cy.nodes().filter(node => node.data('kind') !== 'pad');
+    const nodeCount = graphNodes.length;
+    const leaves = graphNodes.filter(node => !node.isParent());
     const leafIds = new Set(leaves.map(node => node.id()));
 
     // Dagre's compound-graph ranking can place downstream nodes to the left of
@@ -717,6 +793,7 @@ import { projectedEdgeKey } from './model.js';
     cy.batch(() => placements.forEach(({ node, position, laneId }) => {
       node.position({ x: position.x, y: position.y + lanes.get(laneId).offset });
     }));
+    placePadBadges();
     applyEdgeGeometry();
     if (fit) cy.fit(undefined, 44);
     rememberPositions();
@@ -826,9 +903,12 @@ import { projectedEdgeKey } from './model.js';
     const q = ui.search.value.trim().toLowerCase();
     state.cy.elements().removeClass('search-match search-dim');
     if (!q) return;
-    const matches = state.cy.nodes().filter(n => `${n.data('label')} ${n.data('subtitle')}`.toLowerCase().includes(q));
+    const matches = state.cy.nodes().filter(n => n.data('kind') !== 'pad' && `${n.data('label')} ${n.data('subtitle')}`.toLowerCase().includes(q));
+    const matchIds = new Set(matches.map(node => node.id()));
+    const matchedPadBadges = state.cy.nodes().filter(node => node.data('kind') === 'pad' && matchIds.has(node.data('ownerId')));
     state.cy.elements().addClass('search-dim');
     matches.removeClass('search-dim').addClass('search-match');
+    matchedPadBadges.removeClass('search-dim');
     matches.connectedEdges().removeClass('search-dim');
     if (matches.length) {
       state.cy.animate({ center: { eles: matches[0] }, zoom: Math.max(state.cy.zoom(), .9) }, { duration: 260 });
