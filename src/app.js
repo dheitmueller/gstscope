@@ -1,4 +1,4 @@
-import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
+import { horizontalLabelPlacement, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
 import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
@@ -399,7 +399,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const caps = [...new Set(e.links.map(l => formatCaps(l.caps)).filter(Boolean))].join('\n\n');
       const label = state.options.caps === 'full' ? caps : state.options.caps === 'media' ? mediaType(caps) : '';
       const labelMetrics = capsLabelMetrics(label);
-      return { data: { id: `edge-${i}`, source: e.source, target: e.target, label, labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, labelOffsetX: 0, labelOffsetY: labelMetrics.above, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId, targetPadId, segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
+      return { data: { id: `edge-${i}`, source: e.source, target: e.target, label, mainLabel: '', sourceLabel: '', targetLabel: '', labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, labelOffsetX: 0, labelOffsetY: 0, sourceLabelOffset: 0, targetLabelOffset: 0, sourceLabelMarginY: 0, targetLabelMarginY: 0, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId, targetPadId, segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
     });
 
     for (const [owner, groups] of padsByOwner) {
@@ -431,7 +431,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       { selector: 'node[kind="pad"][typeClass="sink"]', style: { 'background-color': '#39271d', 'border-color': '#f5a65b', color: '#ffd9b3' } },
       { selector: 'node[kind="pad"][typeClass="src"]', style: { 'background-color': '#133330', 'border-color': '#4dd6c6', color: '#baf5ee' } },
       { selector: 'node.unlinked-pad', style: { 'border-style': 'dashed', opacity: .78 } },
-      { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', label: 'data(label)', color: '#aebccc', 'font-size': 9, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-margin-x': 'data(labelOffsetX)', 'text-margin-y': 'data(labelOffsetY)', 'text-background-color': '#091019', 'text-background-opacity': .94, 'text-background-padding': 3, 'text-rotation': 'none', 'overlay-opacity': 0 } },
+      { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', label: 'data(mainLabel)', 'source-label': 'data(sourceLabel)', 'target-label': 'data(targetLabel)', color: '#aebccc', 'font-size': 9, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-margin-x': 'data(labelOffsetX)', 'text-margin-y': 'data(labelOffsetY)', 'source-text-offset': 'data(sourceLabelOffset)', 'target-text-offset': 'data(targetLabelOffset)', 'source-text-margin-y': 'data(sourceLabelMarginY)', 'target-text-margin-y': 'data(targetLabelMarginY)', 'text-background-color': '#091019', 'text-background-opacity': .94, 'text-background-padding': 3, 'text-rotation': 'none', 'source-text-rotation': 'none', 'target-text-rotation': 'none', 'overlay-opacity': 0 } },
       { selector: 'edge[synthetic]', style: { 'line-style': 'dashed', 'line-color': '#b78a59', 'target-arrow-color': '#b78a59' } },
       { selector: 'node.trace-dim', style: { opacity: .48 } },
       { selector: 'edge.trace-dim', style: { opacity: .28 } },
@@ -717,22 +717,47 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       });
       assignRouteLanes();
       cy.edges().forEach(applySegments);
+      const labelBoxes = [];
+      const labelObstacles = obstacles.map(node => node.boundingBox({ includeLabels: false }));
       cy.edges().forEach(edge => {
         const source = edge.source().position();
         const target = edge.target().position();
         const dx = Math.abs(target.x - source.x);
         const dy = Math.abs(target.y - source.y);
         const vertical = dy > Math.max(80, dx * .65);
+        edge.data('mainLabel', '');
+        edge.data('sourceLabel', '');
+        edge.data('targetLabel', '');
+        edge.data('labelOffsetX', 0);
+        edge.data('labelOffsetY', 0);
         if (vertical && edge.data('label')) {
           const midpointX = (source.x + target.x) / 2;
           const beside = edge.data('labelBeside') || 36;
           const side = midpointX + beside + 18 > graphBounds.x2 ? -1 : 1;
+          edge.data('mainLabel', edge.data('label'));
           edge.data('labelOffsetX', side * beside);
-          edge.data('labelOffsetY', 0);
-        } else {
-          edge.data('labelOffsetX', 0);
-          edge.data('labelOffsetY', edge.data('labelAbove') || 0);
+          return;
         }
+        if (!edge.data('label')) return;
+        const halfWidth = Math.max(1, (edge.data('labelBeside') || 11) - 10);
+        const halfHeight = Math.max(1, Math.abs(edge.data('labelAbove') || -11) - 10);
+        const placement = horizontalLabelPlacement(
+          source,
+          target,
+          edge.scratch('_routeTurn') ?? .5,
+          { width: halfWidth * 2, height: halfHeight * 2 },
+          labelObstacles,
+          labelBoxes
+        );
+        if (!placement) {
+          edge.data('mainLabel', edge.data('label'));
+          edge.data('labelOffsetY', edge.data('labelAbove') || 0);
+          return;
+        }
+        edge.data(`${placement.anchor}Label`, edge.data('label'));
+        edge.data(`${placement.anchor}LabelOffset`, placement.offset);
+        edge.data(`${placement.anchor}LabelMarginY`, placement.marginY);
+        labelBoxes.push(placement.box);
       });
     });
   }

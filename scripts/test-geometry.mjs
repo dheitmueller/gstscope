@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
+import { horizontalLabelPlacement, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
 import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
@@ -35,6 +35,21 @@ const reserved = orthogonalRouteSegments({ x: 0, y: 0 }, { x: 200, y: 200 }, 0.5
 const overlapping = orthogonalRouteSegments({ x: 0, y: 40 }, { x: 200, y: 240 }, 0.5);
 const separate = orthogonalRouteSegments({ x: 0, y: 40 }, { x: 200, y: 240 }, 0.7);
 assert.ok(orthogonalRouteOverlapScore(overlapping, [reserved]) > orthogonalRouteOverlapScore(separate, [reserved]));
+
+const clearLabel = horizontalLabelPlacement(
+  { x: 0, y: 100 }, { x: 300, y: 200 }, .5, { width: 70, height: 12 },
+  [{ x1: 20, y1: 105, x2: 130, y2: 140 }]
+);
+assert.equal(clearLabel.anchor, 'source');
+assert.ok(clearLabel.marginY < 0);
+const belowLabel = horizontalLabelPlacement(
+  { x: 0, y: 100 }, { x: 300, y: 200 }, .5, { width: 70, height: 12 },
+  [
+    { x1: 20, y1: 70, x2: 130, y2: 99 },
+    { x1: 170, y1: 170, x2: 280, y2: 199 }
+  ]
+);
+assert.ok(belowLabel.marginY > 0);
 
 const shared = { source: 'source', target: 'bin' };
 const video = { ...shared, links: [{ sourcePad: 'video-src', sinkPad: 'video-sink' }] };
