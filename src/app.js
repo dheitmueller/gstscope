@@ -10,7 +10,7 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
     fileName: $('fileName'), fileInput: $('fileInput'), openButton: $('openButton'),
     search: $('searchInput'), stats: $('stats'), details: $('details'), loading: $('loading'),
     queues: $('toggleQueues'), tees: $('toggleTees'), pads: $('togglePads'), caps: $('capsMode'),
-    dropOverlay: $('dropOverlay'), compare: $('compareDialog')
+    dropOverlay: $('dropOverlay'), compare: $('compareDialog'), padTooltip: $('padTooltip')
   };
 
   const state = {
@@ -332,17 +332,30 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
       }
     }
 
-    const padsByOwner = new Map();
+    const allPadsByOwner = new Map();
     for (const pad of g.pads.values()) {
-      if (!pad.linked && !state.options.unlinkedPads) continue;
       const owner = pad.element;
       if (!nodeSet.has(owner) || hidden.has(owner)) continue;
-      const groups = padsByOwner.get(owner) || { sink: [], src: [] };
+      const groups = allPadsByOwner.get(owner) || { sink: [], src: [] };
       (pad.direction === 'src' ? groups.src : groups.sink).push(pad);
-      padsByOwner.set(owner, groups);
+      allPadsByOwner.set(owner, groups);
     }
-    const visiblePadId = (owner, direction, padId) =>
-      preferredPadId(padsByOwner.get(owner)?.[direction] || [], padId, padsEquivalent);
+    const endpointPadId = (owner, direction, padId) =>
+      preferredPadId(allPadsByOwner.get(owner)?.[direction] || [], padId, padsEquivalent);
+    const projectedEdgePads = [...edgeMap.values()].map(edge => ({
+      edge,
+      sourcePadId: endpointPadId(edge.source, 'src', edge.links[0]?.sourcePad),
+      targetPadId: endpointPadId(edge.target, 'sink', edge.links.at(-1)?.sinkPad)
+    }));
+    const visibleEndpointPads = new Set(projectedEdgePads.flatMap(({ sourcePadId, targetPadId }) => [sourcePadId, targetPadId].filter(Boolean)));
+    const padsByOwner = new Map();
+    for (const [owner, groups] of allPadsByOwner) {
+      const visible = {
+        sink: groups.sink.filter(pad => visibleEndpointPads.has(pad.id) || state.options.unlinkedPads),
+        src: groups.src.filter(pad => visibleEndpointPads.has(pad.id) || state.options.unlinkedPads)
+      };
+      if (visible.sink.length || visible.src.length) padsByOwner.set(owner, visible);
+    }
 
     const cyNodes = nodes.map(id => {
       const item = g.items.get(id);
@@ -362,11 +375,11 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
         classes: padRows ? 'has-pad-badges' : ''
       };
     });
-    const cyEdges = [...edgeMap.values()].map((e, i) => {
+    const cyEdges = projectedEdgePads.map(({ edge: e, sourcePadId, targetPadId }, i) => {
       const caps = [...new Set(e.links.map(l => formatCaps(l.caps)).filter(Boolean))].join('\n\n');
       const label = state.options.caps === 'full' ? caps : state.options.caps === 'media' ? mediaType(caps) : '';
       const labelMetrics = capsLabelMetrics(label);
-      return { data: { id: `edge-${i}`, source: e.source, target: e.target, label, labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, labelOffsetX: 0, labelOffsetY: labelMetrics.above, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId: visiblePadId(e.source, 'src', e.links[0]?.sourcePad), targetPadId: visiblePadId(e.target, 'sink', e.links.at(-1)?.sinkPad), segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
+      return { data: { id: `edge-${i}`, source: e.source, target: e.target, label, labelAbove: labelMetrics.above, labelBeside: labelMetrics.beside, labelOffsetX: 0, labelOffsetY: labelMetrics.above, sourceEndpoint: '50% 0%', targetEndpoint: '-50% 0%', sourcePadId, targetPadId, segmentDistances: '0', segmentWeights: '0.5', caps, links: e.links, hiddenPath: e.hiddenPath, synthetic: e.hiddenPath.length > 0 } };
     });
 
     for (const [owner, groups] of padsByOwner) {
@@ -374,8 +387,8 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
         const id = `pad:${pad.id}`;
         const padWidth = Math.max(30, Math.min(56, 14 + pad.name.length * 5));
         cyNodes.push({
-          data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id, ownerId: owner, padWidth, linked: pad.linked },
-          classes: pad.linked ? 'linked-pad' : 'unlinked-pad',
+          data: { id, label: pad.name, kind: 'pad', typeClass: pad.direction, padId: pad.id, ownerId: owner, padWidth, linked: visibleEndpointPads.has(pad.id), graphLinked: pad.linked },
+          classes: visibleEndpointPads.has(pad.id) ? 'linked-pad' : 'unlinked-pad',
           grabbable: false
         });
       }
@@ -446,6 +459,7 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
 
   function render({ layout = true, fit = true } = {}) {
     if (!state.graph) return;
+    ui.padTooltip.classList.remove('show');
     const previousVisible = state.cy ? new Set(state.cy.nodes().map(node => node.id())) : new Set();
     rememberPositions();
     const view = projectGraph();
@@ -472,6 +486,20 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
     });
     cy.on('tap', 'edge', evt => { state.selectedId = null; focusTrace(evt.target); showDetails(evt.target); });
     cy.on('tap', evt => { if (evt.target === cy) { state.selectedId = null; clearTrace(); } });
+    const hidePadTooltip = () => ui.padTooltip.classList.remove('show');
+    cy.on('mouseover', 'node[kind="pad"]', evt => {
+      const pad = state.graph.pads.get(evt.target.data('padId'));
+      if (!pad) return;
+      ui.padTooltip.textContent = pad.name;
+      ui.padTooltip.classList.add('show');
+      const position = evt.target.renderedPosition();
+      const left = Math.max(8, Math.min(cy.width() - ui.padTooltip.offsetWidth - 8, position.x + 12));
+      const top = Math.max(8, position.y - ui.padTooltip.offsetHeight - 12);
+      ui.padTooltip.style.left = `${left}px`;
+      ui.padTooltip.style.top = `${top}px`;
+    });
+    cy.on('mouseout', 'node[kind="pad"]', hidePadTooltip);
+    cy.on('pan zoom resize', hidePadTooltip);
     cy.on('tap', 'node[kind="bin"]', evt => {
       const now = Date.now(), id = evt.target.id();
       if (state.lastTap.id === id && now - state.lastTap.at < 420) toggleBin(id);
@@ -512,7 +540,7 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
     });
     cy.batch(() => {
       for (const pads of groups.values()) {
-        pads.sort((a, b) => a.data('label').localeCompare(b.data('label')) || a.id().localeCompare(b.id()));
+        // Keep the original DOT declaration order within each pad direction.
         const owner = cy.getElementById(pads[0].data('ownerId'));
         if (!owner.length) continue;
         const direction = pads[0].data('typeClass');
@@ -850,7 +878,7 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
   function showDetails(target) {
     if (target.isEdge()) return showEdge(target.data());
     const padId = target.data('padId');
-    if (padId) return showPad(state.graph.pads.get(padId));
+    if (padId) return showPad(state.graph.pads.get(padId), target.data('linked'));
     showItem(target.id());
   }
 
@@ -866,9 +894,9 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
     $('inspectorToggle')?.addEventListener('click', () => toggleBin(id));
   }
 
-  function showPad(pad) {
+  function showPad(pad, visiblyLinked = pad.linked) {
     const owner = state.graph.items.get(pad.element);
-    ui.details.innerHTML = `<div class="eyebrow">${esc(pad.direction)} pad</div><h2>${esc(pad.name)}</h2><div class="detail-grid"><dt>Element</dt><dd>${esc(owner?.name)}</dd><dt>Linked</dt><dd>${pad.linked ? 'Yes' : 'No'}</dd><dt>Flags</dt><dd>${esc(pad.flags || '—')}</dd><dt>DOT id</dt><dd>${esc(pad.id)}</dd></div>`;
+    ui.details.innerHTML = `<div class="eyebrow">${esc(pad.direction)} pad</div><h2>${esc(pad.name)}</h2><div class="detail-grid"><dt>Element</dt><dd>${esc(owner?.name)}</dd><dt>Visible link</dt><dd>${visiblyLinked ? 'Yes' : 'No'}</dd><dt>Linked in DOT</dt><dd>${pad.linked ? 'Yes' : 'No'}</dd><dt>Flags</dt><dd>${esc(pad.flags || '—')}</dd><dt>DOT id</dt><dd>${esc(pad.id)}</dd></div>`;
   }
 
   function showEdge(data) {
