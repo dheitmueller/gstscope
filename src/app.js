@@ -1,4 +1,4 @@
-import { horizontalLabelPlacement, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
+import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js';
 import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
@@ -884,15 +884,62 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const applySegments = edge => {
       const source = endpointPosition(edge, 'source');
       const target = endpointPosition(edge, 'target');
+      if (target.x - source.x < 56) {
+        const clearance = 22;
+        const sourceStubX = source.x + clearance;
+        const targetStubX = target.x - clearance;
+        const midpointY = (source.y + target.y) / 2;
+        const laneCandidates = [...new Set([
+          midpointY,
+          Math.min(source.y, target.y) - 48,
+          Math.max(source.y, target.y) + 48
+        ].map(value => value.toFixed(2)))].map(Number);
+        let best;
+        laneCandidates.forEach(laneY => {
+          const controls = [
+            { x: sourceStubX, y: source.y },
+            { x: sourceStubX, y: laneY },
+            { x: targetStubX, y: laneY },
+            { x: targetStubX, y: target.y }
+          ];
+          const route = orthogonalPolylineSegments([source, ...controls, target]);
+          let score = Math.abs(laneY - midpointY) / 100;
+          obstacles.forEach(node => {
+            if (node.same(edge.source()) || node.same(edge.target())) return;
+            const box = node.boundingBox({ includeLabels: false });
+            const pad = 9;
+            const x1 = box.x1 - pad, x2 = box.x2 + pad;
+            const y1 = box.y1 - pad, y2 = box.y2 + pad;
+            route.verticals.forEach(vertical => {
+              if (vertical.x >= x1 && vertical.x <= x2 && overlaps(vertical.start, vertical.end, y1, y2)) score += 12;
+            });
+            route.horizontals.forEach(horizontal => {
+              if (horizontal.y >= y1 && horizontal.y <= y2 && overlaps(horizontal.start, horizontal.end, x1, x2)) score += 12;
+            });
+          });
+          score += orthogonalRouteOverlapScore(route, reservedRoutes);
+          if (!best || score < best.score) best = { controls, route, score };
+        });
+        const geometry = segmentDataForControls(source, target, best.controls);
+        edge.scratch('_appliedTurn', null);
+        edge.scratch('_routeSegments', best.route);
+        reservedRoutes.push(best.route);
+        edge.data('segmentWeights', geometry.weights.map(value => value.toFixed(5)).join(' '));
+        edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
+        return;
+      }
       const turnRatio = chooseTurnRatio(edge, source, target);
       edge.scratch('_appliedTurn', turnRatio);
       const geometry = orthogonalSegmentData(source, target, turnRatio);
       if (!geometry) {
         edge.data('segmentWeights', '0.5');
         edge.data('segmentDistances', '0');
+        edge.scratch('_routeSegments', orthogonalPolylineSegments([source, target]));
         return;
       }
-      reservedRoutes.push(orthogonalRouteSegments(source, target, turnRatio));
+      const route = orthogonalRouteSegments(source, target, turnRatio);
+      edge.scratch('_routeSegments', route);
+      reservedRoutes.push(route);
       edge.data('segmentWeights', geometry.weights.map(value => value.toFixed(5)).join(' '));
       edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
     };
@@ -914,7 +961,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       cy.edges().forEach(applySegments);
       const labelBoxes = [];
       const labelObstacles = obstacles.map(node => node.boundingBox({ includeLabels: false }));
-      const labelRoutes = cy.edges().map(edge => orthogonalRouteSegments(
+      const labelRoutes = cy.edges().map(edge => edge.scratch('_routeSegments') || orthogonalRouteSegments(
         endpointPosition(edge, 'source'),
         endpointPosition(edge, 'target'),
         edge.scratch('_appliedTurn') ?? edge.scratch('_routeTurn') ?? .5
@@ -926,7 +973,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const target = endpointPosition(edge, 'target');
         const dx = Math.abs(target.x - source.x);
         const dy = Math.abs(target.y - source.y);
-        const vertical = dy > Math.max(80, dx * .65);
+        const vertical = edge.scratch('_appliedTurn') != null && dy > Math.max(80, dx * .65);
         const labelWidth = edge.data('labelWidth') || 24;
         const labelHeight = edge.data('labelHeight') || 12;
         if (vertical) {
@@ -941,7 +988,9 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
             labelObstacles.forEach(obstacle => { if (intersects(box, obstacle)) score += 10000; });
             labelBoxes.forEach(other => { if (intersects(box, other)) score += 5000; });
             labelRoutes.forEach(route => {
-              if (route.vertical.x >= box.x1 - 3 && route.vertical.x <= box.x2 + 3 && route.vertical.end >= box.y1 && route.vertical.start <= box.y2) score += 3000;
+              (route.verticals || [route.vertical]).forEach(vertical => {
+                if (vertical.x >= box.x1 - 3 && vertical.x <= box.x2 + 3 && vertical.end >= box.y1 && vertical.start <= box.y2) score += 3000;
+              });
               route.horizontals.forEach(horizontal => {
                 if (horizontal.y >= box.y1 - 3 && horizontal.y <= box.y2 + 3 && horizontal.end >= box.x1 && horizontal.start <= box.x2) score += 3000;
               });
@@ -953,10 +1002,16 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           labelBoxes.push(placement.box);
           return;
         }
+        const route = edge.scratch('_routeSegments');
+        const longestHorizontal = route?.horizontals?.reduce((best, segment) =>
+          !best || segment.end - segment.start > best.end - best.start ? segment : best, null);
+        const customLabelSegment = edge.scratch('_appliedTurn') == null && longestHorizontal
+          ? { source: { x: longestHorizontal.start, y: longestHorizontal.y }, target: { x: longestHorizontal.end, y: longestHorizontal.y }, ratio: .5 }
+          : { source, target, ratio: edge.scratch('_appliedTurn') ?? edge.scratch('_routeTurn') ?? .5 };
         const placement = horizontalLabelPlacement(
-          source,
-          target,
-          edge.scratch('_appliedTurn') ?? edge.scratch('_routeTurn') ?? .5,
+          customLabelSegment.source,
+          customLabelSegment.target,
+          customLabelSegment.ratio,
           { width: labelWidth, height: labelHeight },
           labelObstacles,
           labelBoxes,

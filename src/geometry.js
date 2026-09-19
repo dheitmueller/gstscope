@@ -5,9 +5,17 @@ export function orthogonalSegmentData(source, target, turnRatio = 0.5) {
   if (lengthSquared < 1 || Math.abs(dy) < 1) return null;
 
   const ratio = Math.max(0, Math.min(1, Number.isFinite(turnRatio) ? turnRatio : 0.5));
-  const length = Math.sqrt(lengthSquared);
   const turnX = source.x + dx * ratio;
   const controls = [{ x: turnX, y: source.y }, { x: turnX, y: target.y }];
+  return segmentDataForControls(source, target, controls);
+}
+
+export function segmentDataForControls(source, target, controls = []) {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared < 1) return null;
+  const length = Math.sqrt(lengthSquared);
   const weights = [];
   const distances = [];
 
@@ -21,25 +29,38 @@ export function orthogonalSegmentData(source, target, turnRatio = 0.5) {
   return { weights, distances, controls };
 }
 
+export function orthogonalPolylineSegments(points = []) {
+  const verticals = [];
+  const horizontals = [];
+  for (let index = 0; index < points.length - 1; index++) {
+    const a = points[index], b = points[index + 1];
+    if (Math.abs(a.x - b.x) < 1) verticals.push({ x: a.x, start: Math.min(a.y, b.y), end: Math.max(a.y, b.y) });
+    else if (Math.abs(a.y - b.y) < 1) horizontals.push({ y: a.y, start: Math.min(a.x, b.x), end: Math.max(a.x, b.x) });
+  }
+  return { verticals, horizontals, vertical: verticals[0] || { x: 0, start: 0, end: 0 } };
+}
+
 export function orthogonalRouteSegments(source, target, turnRatio = 0.5) {
   const ratio = Math.max(0, Math.min(1, Number.isFinite(turnRatio) ? turnRatio : 0.5));
   const turnX = source.x + (target.x - source.x) * ratio;
-  return {
-    vertical: { x: turnX, start: Math.min(source.y, target.y), end: Math.max(source.y, target.y) },
-    horizontals: [
-      { y: source.y, start: Math.min(source.x, turnX), end: Math.max(source.x, turnX) },
-      { y: target.y, start: Math.min(turnX, target.x), end: Math.max(turnX, target.x) }
-    ]
-  };
+  return orthogonalPolylineSegments([
+    source,
+    { x: turnX, y: source.y },
+    { x: turnX, y: target.y },
+    target
+  ]);
 }
 
 export function orthogonalRouteOverlapScore(route, reservedRoutes, clearance = 16) {
   const overlap = (a, b) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
   let score = 0;
   for (const reserved of reservedRoutes) {
-    if (Math.abs(route.vertical.x - reserved.vertical.x) <= clearance) {
-      const length = overlap(route.vertical, reserved.vertical);
-      if (length > 1) score += 200 + length * 3;
+    for (const vertical of route.verticals || [route.vertical]) {
+      for (const otherVertical of reserved.verticals || [reserved.vertical]) {
+        if (Math.abs(vertical.x - otherVertical.x) > clearance) continue;
+        const length = overlap(vertical, otherVertical);
+        if (length > 1) score += 200 + length * 3;
+      }
     }
     for (const horizontal of route.horizontals) {
       for (const other of reserved.horizontals) {
@@ -75,8 +96,10 @@ export function horizontalLabelPlacement(source, target, turnRatio, labelSize, o
       for (const obstacle of obstacles) if (intersects(box, obstacle)) score += 10000;
       for (const other of occupied) if (intersects(box, other)) score += 5000;
       for (const route of routes) {
-        const verticalHit = route.vertical.x >= box.x1 - 10 && route.vertical.x <= box.x2 + 10 && route.vertical.end >= box.y1 && route.vertical.start <= box.y2;
-        if (verticalHit) score += 3000;
+        for (const vertical of route.verticals || [route.vertical]) {
+          const verticalHit = vertical.x >= box.x1 - 10 && vertical.x <= box.x2 + 10 && vertical.end >= box.y1 && vertical.start <= box.y2;
+          if (verticalHit) score += 3000;
+        }
         for (const horizontal of route.horizontals) {
           const horizontalHit = horizontal.y >= box.y1 - 3 && horizontal.y <= box.y2 + 3 && horizontal.end >= box.x1 && horizontal.start <= box.x2;
           if (horizontalHit) score += 3000;

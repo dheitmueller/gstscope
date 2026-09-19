@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { horizontalLabelPlacement, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
+import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from '../src/geometry.js';
 import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
@@ -30,6 +30,30 @@ for (const { source, target, ratio } of cases) {
 
 assert.equal(orthogonalSegmentData({ x: 0, y: 0 }, { x: 200, y: 0 }), null);
 assert.equal(orthogonalSegmentData({ x: 5, y: 5 }, { x: 5, y: 5 }), null);
+
+const backwardSource = { x: 300, y: 40 };
+const backwardTarget = { x: 100, y: 180 };
+const backwardControls = [
+  { x: 322, y: 40 },
+  { x: 322, y: 110 },
+  { x: 78, y: 110 },
+  { x: 78, y: 180 }
+];
+const backwardGeometry = segmentDataForControls(backwardSource, backwardTarget, backwardControls);
+backwardGeometry.weights.forEach((weight, index) => {
+  const dx = backwardTarget.x - backwardSource.x;
+  const dy = backwardTarget.y - backwardSource.y;
+  const length = Math.hypot(dx, dy);
+  const x = backwardSource.x + weight * dx + backwardGeometry.distances[index] * -dy / length;
+  const y = backwardSource.y + weight * dy + backwardGeometry.distances[index] * dx / length;
+  close(x, backwardControls[index].x);
+  close(y, backwardControls[index].y);
+});
+const backwardRoute = orthogonalPolylineSegments([backwardSource, ...backwardControls, backwardTarget]);
+assert.equal(backwardRoute.horizontals.length, 3);
+assert.equal(backwardRoute.verticals.length, 2);
+assert.ok(backwardRoute.horizontals[0].end > backwardSource.x);
+assert.ok(backwardRoute.horizontals.at(-1).start < backwardTarget.x);
 
 const reserved = orthogonalRouteSegments({ x: 0, y: 0 }, { x: 200, y: 200 }, 0.5);
 const overlapping = orthogonalRouteSegments({ x: 0, y: 40 }, { x: 200, y: 240 }, 0.5);
