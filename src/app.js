@@ -380,6 +380,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     for (const pad of g.pads.values()) {
       const owner = pad.element;
       if (!nodeSet.has(owner) || hidden.has(owner)) continue;
+      // Once a bin is expanded, its boundary pads no longer have a single
+      // element box to attach to. Its concrete child pads are visible instead,
+      // while the bin's own pads remain available in the inspector.
+      if (g.items.get(owner)?.kind === 'bin' && !state.collapsed.has(owner)) continue;
       // A bin's proxypad and its concrete ghost-pad target are two DOT nodes
       // for one logical boundary port. Show the meaningful concrete name and
       // keep the alias only in the parsed model for endpoint resolution.
@@ -648,20 +652,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const ownerPosition = owner.position();
         const ownerWidth = owner.outerWidth();
         const ownerHeight = owner.outerHeight();
-        // Leaf-element pads sit along the lower part of the element, while
-        // expanded-bin pads stay by the bin header. Putting compound pads at
-        // a distant side or bottom makes them appear detached when a bin grows
-        // very large, so keep their left/right grouping near the header.
-        const firstY = owner.isParent()
-          ? ownerPosition.y - ownerHeight / 2 + 24 + badgeHeight / 2
-          : ownerPosition.y + ownerHeight / 2 - 5 - totalHeight + badgeHeight / 2;
+        const firstY = ownerPosition.y + ownerHeight / 2 - 5 - totalHeight + badgeHeight / 2;
         pads.forEach((pad, index) => {
           const width = pad.outerWidth();
-          const sideOffset = owner.isParent()
-            ? Math.max(0, Math.min(170, ownerWidth / 2 - width / 2 - 12))
-            : ownerWidth / 2 - width / 2 - 4;
           pad.position({
-            x: ownerPosition.x + (direction === 'src' ? sideOffset : -sideOffset),
+            x: ownerPosition.x + (direction === 'src' ? ownerWidth / 2 - width / 2 - 4 : -ownerWidth / 2 + width / 2 + 4),
             y: firstY + index * (badgeHeight + gap)
           });
         });
