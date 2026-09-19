@@ -34,11 +34,6 @@ export function padsShareFlowChannel(inputPad, outputPad) {
   return inputChannel !== null && inputChannel === channel(outputPad);
 }
 
-export function numberedPadOrder(name = '') {
-  const match = /(?:^|_)(\d+)$/.exec(name);
-  return match ? Number(match[1]) : null;
-}
-
 export function siblingOrderAssignments(items) {
   const slots = items.map(item => item.y).sort((a, b) => a - b);
   return [...items]

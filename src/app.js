@@ -1,5 +1,5 @@
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
-import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from './model.js';
+import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -178,7 +178,7 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
       if (!owner) continue;
       const labelBits = labelLines(raw.attrs.label || raw.id);
       const direction = /_src$/.test(raw.scope.id) ? 'src' : /_sink$/.test(raw.scope.id) ? 'sink' : 'unknown';
-      const pad = { id: raw.id, name: labelBits[0], direction, element: owner.id, flags: labelBits.slice(1).join(' '), linked: false, raw: raw.attrs };
+      const pad = { id: raw.id, name: labelBits[0], direction, element: owner.id, declarationOrder: owner.pads.length, flags: labelBits.slice(1).join(' '), linked: false, raw: raw.attrs };
       pads.set(pad.id, pad);
       owner.pads.push(pad.id);
     }
@@ -758,9 +758,8 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
     });
     dagre.layout(guide);
 
-    // Dagre is free to order nodes that share a rank, which can invert an
-    // element's numbered output pads. Preserve the semantic top-to-bottom
-    // order for direct siblings such as src_0 -> video and src_1 -> audio.
+    // Dagre is free to order nodes that share a rank. Preserve the source
+    // pads' declaration order from the DOT file for direct sibling branches.
     leaves.forEach(source => {
       const groups = new Map();
       source.outgoers('edge').forEach(edge => {
@@ -768,8 +767,8 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
         if (!leafIds.has(target.id())) return;
         const position = guide.node(target.id());
         const pad = state.graph.pads.get(edge.data('sourcePadId'));
-        const order = numberedPadOrder(pad?.name);
-        if (!position || order === null) return;
+        const order = pad?.declarationOrder;
+        if (!position || !Number.isFinite(order)) return;
         const parentId = target.parent().id() || '__root__';
         const key = `${parentId}|${position.x.toFixed(3)}`;
         if (!groups.has(key)) groups.set(key, new Map());
