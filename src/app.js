@@ -1,4 +1,5 @@
-import { orthogonalSegmentData } from './geometry.js';
+import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
+import { projectedEdgeKey } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -18,7 +19,7 @@ import { orthogonalSegmentData } from './geometry.js';
     collapsed: new Set(),
     positions: new Map(),
     preset: 'architectural',
-    options: { queues: false, redundantTees: false, unlinkedPads: false, caps: 'none' },
+    options: { queues: false, redundantTees: false, unlinkedPads: false, caps: 'media' },
     lastTap: { id: null, at: 0 },
     selectedId: null,
     filename: 'playbin3-hang.dot'
@@ -322,7 +323,7 @@ import { orthogonalSegmentData } from './geometry.js';
     const edgeMap = new Map();
     for (const e of projectedEdges) {
       if (!nodeSet.has(e.source) || !nodeSet.has(e.target) || e.source === e.target) continue;
-      const key = `${e.source}|${e.target}`;
+      const key = projectedEdgeKey(e);
       if (!edgeMap.has(key)) edgeMap.set(key, { ...e, links: [...e.links], hiddenPath: [...e.hiddenPath] });
       else {
         const current = edgeMap.get(key);
@@ -509,11 +510,12 @@ import { orthogonalSegmentData } from './geometry.js';
 
     const obstacles = cy.nodes().filter(node => !node.isParent());
     const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
+    const reservedRoutes = [];
     const chooseTurnRatio = (edge, source, target) => {
       const preferred = edge.scratch('_routeTurn') ?? .5;
-      if (target.x - source.x < 40) return preferred;
       const candidates = [...new Set([
-        preferred, preferred - .2, preferred - .1, preferred + .1, preferred + .2, .35, .5, .65
+        preferred, preferred - .3, preferred - .2, preferred - .1, preferred + .1, preferred + .2, preferred + .3,
+        .15, .25, .35, .5, .65, .75, .85
       ].map(value => Math.max(.15, Math.min(.85, value)).toFixed(3)))].map(Number);
       let best = preferred;
       let bestScore = Infinity;
@@ -533,6 +535,8 @@ import { orthogonalSegmentData } from './geometry.js';
           if (vertical) score += 10;
           if (lastHorizontal) score += 12;
         });
+        const routeOverlap = orthogonalRouteOverlapScore(orthogonalRouteSegments(source, target, ratio), reservedRoutes);
+        score += routeOverlap;
         if (score < bestScore) { bestScore = score; best = ratio; }
       }
       return best;
@@ -548,6 +552,7 @@ import { orthogonalSegmentData } from './geometry.js';
         edge.data('segmentDistances', '0');
         return;
       }
+      reservedRoutes.push(orthogonalRouteSegments(source, target, turnRatio));
       edge.data('segmentWeights', geometry.weights.map(value => value.toFixed(5)).join(' '));
       edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
     };
@@ -804,7 +809,7 @@ import { orthogonalSegmentData } from './geometry.js';
     const bins = [...state.graph.items.values()].filter(x => x.kind === 'bin' && x.id !== state.graph.pipeline);
     state.preset = name;
     if (name === 'architectural') {
-      state.options = { queues: false, redundantTees: false, unlinkedPads: false, caps: 'none' };
+      state.options = { queues: false, redundantTees: false, unlinkedPads: false, caps: 'media' };
       state.collapsed = new Set(bins.map(x => x.id));
     } else if (name === 'normal') {
       state.options = { queues: false, redundantTees: true, unlinkedPads: false, caps: 'media' };
