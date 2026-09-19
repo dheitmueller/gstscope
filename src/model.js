@@ -40,3 +40,23 @@ export function siblingOrderAssignments(items) {
     .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
     .map((item, index) => ({ id: item.id, y: slots[index] }));
 }
+
+export function isolatedSiblingPlacements(items, gap = 62) {
+  const connected = items.filter(item => item.connected);
+  const isolated = items.filter(item => !item.connected);
+  if (!connected.length || !isolated.length) return [];
+
+  const left = Math.min(...connected.map(item => item.x - item.width / 2));
+  const bottom = Math.max(...connected.map(item => item.y + item.height / 2));
+  const rowHeight = Math.max(...isolated.map(item => item.height));
+  let cursor = left;
+  return isolated.map(item => {
+    const placement = {
+      id: item.id,
+      x: cursor + item.width / 2,
+      y: bottom + gap + rowHeight / 2
+    };
+    cursor += item.width + gap;
+    return placement;
+  });
+}

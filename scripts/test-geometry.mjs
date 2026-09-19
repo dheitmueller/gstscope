@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
-import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from '../src/model.js';
+import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -86,6 +86,14 @@ assert.deepEqual(
     { id: 'video-concat', y: 100 },
     { id: 'audio-concat', y: 220 }
   ]
+);
+assert.deepEqual(
+  isolatedSiblingPlacements([
+    { id: 'conv', x: 200, y: 100, width: 100, height: 48, connected: true },
+    { id: 'scale', x: 400, y: 100, width: 100, height: 48, connected: true },
+    { id: 'identity', x: 40, y: 100, width: 80, height: 48, connected: false }
+  ]),
+  [{ id: 'identity', x: 190, y: 210 }]
 );
 assert.equal(
   padsShareFlowChannel(

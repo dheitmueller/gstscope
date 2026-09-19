@@ -1,5 +1,5 @@
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
-import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from './model.js';
+import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -779,6 +779,32 @@ import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdg
       groups.forEach(siblings => {
         if (siblings.size < 2) return;
         siblingOrderAssignments([...siblings.values()]).forEach(({ id, y }) => { guide.node(id).y = y; });
+      });
+    });
+
+    // A disconnected child has no rank constraints, so Dagre may put it far
+    // to the left and make its compound parents stretch across upstream
+    // siblings. Keep isolated children beneath the connected flow belonging
+    // to the same immediate bin.
+    const leavesByParent = new Map();
+    leaves.forEach(node => {
+      const parentId = node.parent().id();
+      if (!parentId) return;
+      if (!leavesByParent.has(parentId)) leavesByParent.set(parentId, []);
+      const position = guide.node(node.id());
+      if (!position) return;
+      leavesByParent.get(parentId).push({
+        id: node.id(),
+        x: position.x,
+        y: position.y,
+        width: position.width,
+        height: position.height,
+        connected: node.connectedEdges().length > 0
+      });
+    });
+    leavesByParent.forEach(siblings => {
+      isolatedSiblingPlacements(siblings, nodeCount > 100 ? 44 : 62).forEach(({ id, x, y }) => {
+        Object.assign(guide.node(id), { x, y });
       });
     });
 
