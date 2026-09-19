@@ -4,7 +4,7 @@ GstScope is a browser-only explorer for large GStreamer DOT pipeline dumps. It t
 
 ## Try it
 
-The GitHub Pages workflow is configured for **https://dheitmueller.github.io/gstscope/**. The repository owner must enable GitHub Actions as the Pages source once under **Settings → Pages** before the first deployment can complete.
+The latest successful build of `main` is published at **https://dheitmueller.github.io/gstscope/**.
 
 DOT files selected with **Open DOT** or drag-and-drop stay in the browser. GstScope has no server-side runtime and does not upload pipeline data.
 
@@ -75,4 +75,4 @@ The bundled `playbin3-hang.dot` comes from [Matthijs Kooijman's public GStreamer
 
 ## License
 
-No project license has been selected yet. Third-party notices are listed in `THIRD_PARTY_NOTICES.md`.
+GstScope is licensed under the GNU General Public License, version 2 or (at your option) any later version. See [LICENSE](LICENSE). Third-party notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
