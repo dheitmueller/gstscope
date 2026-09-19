@@ -50,6 +50,11 @@ const belowLabel = horizontalLabelPlacement(
   ]
 );
 assert.ok(belowLabel.marginY > 0);
+const outsideBendLabel = horizontalLabelPlacement(
+  { x: 0, y: 200 }, { x: 300, y: 100 }, .5, { width: 70, height: 12 }
+);
+assert.equal(outsideBendLabel.anchor, 'source');
+assert.ok(outsideBendLabel.marginY > 0);
 
 const shared = { source: 'source', target: 'bin' };
 const video = { ...shared, links: [{ sourcePad: 'video-src', sinkPad: 'video-sink' }] };

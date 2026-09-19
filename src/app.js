@@ -740,6 +740,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       cy.edges().forEach(applySegments);
       const labelBoxes = [];
       const labelObstacles = obstacles.map(node => node.boundingBox({ includeLabels: false }));
+      const labelRoutes = cy.edges().map(edge => orthogonalRouteSegments(
+        endpointPosition(edge, 'source'),
+        endpointPosition(edge, 'target'),
+        edge.scratch('_routeTurn') ?? .5
+      ));
       cy.edges().forEach(edge => {
         const source = endpointPosition(edge, 'source');
         const target = endpointPosition(edge, 'target');
@@ -768,7 +773,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           edge.scratch('_routeTurn') ?? .5,
           { width: halfWidth * 2, height: halfHeight * 2 },
           labelObstacles,
-          labelBoxes
+          labelBoxes,
+          labelRoutes
         );
         if (!placement) {
           edge.data('mainLabel', edge.data('label'));
