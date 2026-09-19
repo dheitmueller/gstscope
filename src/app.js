@@ -971,7 +971,30 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
     const q = ui.search.value.trim().toLowerCase();
     state.cy.elements().removeClass('search-match search-dim');
     if (!q) return;
-    const matches = state.cy.nodes().filter(n => n.data('kind') !== 'pad' && `${n.data('label')} ${n.data('subtitle')}`.toLowerCase().includes(q));
+    const modelMatches = [...state.graph.items.values()].filter(item =>
+      item.id !== state.graph.pipeline && `${item.name} ${item.factory}`.toLowerCase().includes(q)
+    );
+
+    if (modelMatches.length === 1) {
+      const item = modelMatches[0];
+      let changed = false;
+      let ancestor = item.parent ? state.graph.items.get(item.parent) : null;
+      while (ancestor) {
+        if (state.collapsed.delete(ancestor.id)) changed = true;
+        ancestor = ancestor.parent ? state.graph.items.get(ancestor.parent) : null;
+      }
+      if (isQueue(item) && !state.options.queues) { state.options.queues = true; changed = true; }
+      if (isTee(item) && !state.options.redundantTees) { state.options.redundantTees = true; changed = true; }
+      if (changed) {
+        state.preset = '';
+        state.selectedId = item.id;
+        render({ layout: true, fit: false });
+        return;
+      }
+    }
+
+    const modelMatchIds = new Set(modelMatches.map(item => item.id));
+    const matches = state.cy.nodes().filter(n => n.data('kind') !== 'pad' && modelMatchIds.has(n.id()));
     const matchIds = new Set(matches.map(node => node.id()));
     const matchedPadBadges = state.cy.nodes().filter(node => node.data('kind') === 'pad' && matchIds.has(node.data('ownerId')));
     state.cy.elements().addClass('search-dim');
@@ -979,11 +1002,15 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
     matchedPadBadges.removeClass('search-dim');
     matches.connectedEdges().removeClass('search-dim');
     if (matches.length) {
-      state.cy.animate({ center: { eles: matches[0] }, zoom: Math.max(state.cy.zoom(), .9) }, { duration: 260 });
-      state.selectedId = matches[0].id();
-      matches[0].select(); showDetails(matches[0]);
+      const primary = modelMatches.length === 1 ? state.cy.getElementById(modelMatches[0].id) : matches[0];
+      state.cy.animate({ center: { eles: primary }, zoom: Math.max(state.cy.zoom(), .9) }, { duration: 260 });
+      state.selectedId = primary.id();
+      state.cy.nodes().unselect();
+      primary.select();
+      focusTrace(primary);
+      showDetails(primary);
     }
-    ui.stats.textContent = `${matches.length} match${matches.length === 1 ? '' : 'es'} for “${ui.search.value}”`;
+    ui.stats.textContent = `${modelMatches.length} match${modelMatches.length === 1 ? '' : 'es'} for “${ui.search.value}”`;
   }
 
   async function loadText(text, filename) {
@@ -1048,7 +1075,11 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
   ui.tees.addEventListener('change', () => { state.preset = ''; state.options.redundantTees = ui.tees.checked; render({ layout: true }); });
   ui.pads.addEventListener('change', () => { state.preset = ''; state.options.unlinkedPads = ui.pads.checked; render({ layout: true }); });
   ui.caps.addEventListener('change', () => { state.preset = ''; state.options.caps = ui.caps.value; render({ layout: false, fit: false }); });
-  ui.search.addEventListener('input', search);
+  let searchTimer;
+  ui.search.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(search, 180);
+  });
   document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); ui.search.focus(); } });
   $('collapseAll').addEventListener('click', () => { state.collapsed = new Set([...state.graph.items.values()].filter(x => x.kind === 'bin' && x.id !== state.graph.pipeline).map(x => x.id)); state.preset = ''; render({ layout: true }); });
   $('expandAll').addEventListener('click', () => { state.collapsed.clear(); state.preset = ''; render({ layout: true }); });
