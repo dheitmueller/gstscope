@@ -847,10 +847,56 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     };
 
     const graphNodes = cy.nodes().filter(isGraphNode);
-    const obstacles = graphNodes.filter(node => !node.isParent());
+    const leafObstacles = graphNodes.filter(node => !node.isParent());
+    const compoundObstacles = graphNodes.filter(node => node.isParent());
     const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
     const reservedRoutes = [];
+    const ancestorIds = node => new Set(node?.length ? node.ancestors().map(parent => parent.id()) : []);
+    const edgeObstacles = edge => {
+      const sourceAncestors = ancestorIds(edge.source());
+      const targetAncestors = ancestorIds(edge.target());
+      const allowedCompounds = new Set([...sourceAncestors].filter(id => targetAncestors.has(id)));
+
+      // A ghost connector deliberately crosses from a pad on a bin boundary
+      // to the element that implements it. That bin (and its ancestors) is
+      // the one compound interior this segment is allowed to traverse.
+      if (edge.data('ghostConnector')) {
+        [edge.source(), edge.target()].forEach(endpointNode => {
+          if (endpointNode.data('kind') !== 'pad') return;
+          let owner = cy.getElementById(endpointNode.data('ownerId'));
+          while (owner?.length) {
+            allowedCompounds.add(owner.id());
+            owner = owner.parent();
+          }
+        });
+      }
+
+      return [...leafObstacles, ...compoundObstacles.filter(node => !allowedCompounds.has(node.id()))]
+        .filter(node => !node.same(edge.source()) && !node.same(edge.target()))
+        .map(node => ({
+          node,
+          compound: node.isParent(),
+          box: node.boundingBox({ includeLabels: false })
+        }));
+    };
+    const routeObstacleScore = (route, obstacleEntries, compoundOnly = false) => {
+      let score = 0;
+      obstacleEntries.forEach(({ box, compound }) => {
+        if (compoundOnly && !compound) return;
+        const pad = compound ? 3 : 9;
+        const x1 = box.x1 - pad, x2 = box.x2 + pad;
+        const y1 = box.y1 - pad, y2 = box.y2 + pad;
+        route.verticals.forEach(vertical => {
+          if (vertical.x >= x1 && vertical.x <= x2 && overlaps(vertical.start, vertical.end, y1, y2)) score += compound ? 1000 : 12;
+        });
+        route.horizontals.forEach(horizontal => {
+          if (horizontal.y >= y1 && horizontal.y <= y2 && overlaps(horizontal.start, horizontal.end, x1, x2)) score += compound ? 1000 : 12;
+        });
+      });
+      return score;
+    };
     const chooseTurnRatio = (edge, source, target) => {
+      const obstacleEntries = edgeObstacles(edge);
       const preferred = edge.scratch('_routeTurn') ?? .5;
       const candidates = [...new Set([
         preferred, preferred - .3, preferred - .2, preferred - .1, preferred + .1, preferred + .2, preferred + .3,
@@ -859,22 +905,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       let best = preferred;
       let bestScore = Infinity;
       for (const ratio of candidates) {
-        const turnX = source.x + (target.x - source.x) * ratio;
         let score = Math.abs(ratio - preferred);
-        obstacles.forEach(node => {
-          if (node.same(edge.source()) || node.same(edge.target())) return;
-          const box = node.boundingBox({ includeLabels: false });
-          const pad = 9;
-          const x1 = box.x1 - pad, x2 = box.x2 + pad;
-          const y1 = box.y1 - pad, y2 = box.y2 + pad;
-          const firstHorizontal = source.y >= y1 && source.y <= y2 && overlaps(source.x, turnX, x1, x2);
-          const vertical = turnX >= x1 && turnX <= x2 && overlaps(source.y, target.y, y1, y2);
-          const lastHorizontal = target.y >= y1 && target.y <= y2 && overlaps(turnX, target.x, x1, x2);
-          if (firstHorizontal) score += 12;
-          if (vertical) score += 10;
-          if (lastHorizontal) score += 12;
-        });
-        const routeOverlap = orthogonalRouteOverlapScore(orthogonalRouteSegments(source, target, ratio), reservedRoutes);
+        const route = orthogonalRouteSegments(source, target, ratio);
+        score += routeObstacleScore(route, obstacleEntries);
+        const routeOverlap = orthogonalRouteOverlapScore(route, reservedRoutes);
         score += routeOverlap;
         if (score < bestScore) { bestScore = score; best = ratio; }
       }
@@ -884,7 +918,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const applySegments = edge => {
       const source = endpointPosition(edge, 'source');
       const target = endpointPosition(edge, 'target');
-      if (target.x - source.x < 56) {
+      const obstacleEntries = edgeObstacles(edge);
+      const normalTurnRatio = target.x - source.x >= 56 ? chooseTurnRatio(edge, source, target) : null;
+      const normalRoute = normalTurnRatio == null ? null : orthogonalRouteSegments(source, target, normalTurnRatio);
+      const crossesCompound = normalRoute && routeObstacleScore(normalRoute, obstacleEntries, true) > 0;
+      if (normalTurnRatio == null || crossesCompound) {
         const clearance = 22;
         const sourceStubX = source.x + clearance;
         const targetStubX = target.x - clearance;
@@ -892,7 +930,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const laneCandidates = [...new Set([
           midpointY,
           Math.min(source.y, target.y) - 48,
-          Math.max(source.y, target.y) + 48
+          Math.max(source.y, target.y) + 48,
+          ...obstacleEntries.flatMap(({ box, compound }) => compound
+            ? [box.y1 - clearance, box.y2 + clearance]
+            : [])
         ].map(value => value.toFixed(2)))].map(Number);
         let best;
         laneCandidates.forEach(laneY => {
@@ -904,19 +945,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           ];
           const route = orthogonalPolylineSegments([source, ...controls, target]);
           let score = Math.abs(laneY - midpointY) / 100;
-          obstacles.forEach(node => {
-            if (node.same(edge.source()) || node.same(edge.target())) return;
-            const box = node.boundingBox({ includeLabels: false });
-            const pad = 9;
-            const x1 = box.x1 - pad, x2 = box.x2 + pad;
-            const y1 = box.y1 - pad, y2 = box.y2 + pad;
-            route.verticals.forEach(vertical => {
-              if (vertical.x >= x1 && vertical.x <= x2 && overlaps(vertical.start, vertical.end, y1, y2)) score += 12;
-            });
-            route.horizontals.forEach(horizontal => {
-              if (horizontal.y >= y1 && horizontal.y <= y2 && overlaps(horizontal.start, horizontal.end, x1, x2)) score += 12;
-            });
-          });
+          score += routeObstacleScore(route, obstacleEntries);
           score += orthogonalRouteOverlapScore(route, reservedRoutes);
           if (!best || score < best.score) best = { controls, route, score };
         });
@@ -928,7 +957,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
         return;
       }
-      const turnRatio = chooseTurnRatio(edge, source, target);
+      const turnRatio = normalTurnRatio;
       edge.scratch('_appliedTurn', turnRatio);
       const geometry = orthogonalSegmentData(source, target, turnRatio);
       if (!geometry) {
@@ -960,7 +989,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       assignRouteLanes();
       cy.edges().forEach(applySegments);
       const labelBoxes = [];
-      const labelObstacles = obstacles.map(node => node.boundingBox({ includeLabels: false }));
+      const labelObstacles = graphNodes.map(node => node.boundingBox({ includeLabels: false }));
       const labelRoutes = cy.edges().map(edge => edge.scratch('_routeSegments') || orthogonalRouteSegments(
         endpointPosition(edge, 'source'),
         endpointPosition(edge, 'target'),
