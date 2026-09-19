@@ -897,18 +897,17 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           box: node.boundingBox({ includeLabels: false })
         }));
     };
-    const routeObstacleScore = (route, obstacleEntries, compoundOnly = false) => {
+    const routeObstacleScore = (route, obstacleEntries) => {
       let score = 0;
       obstacleEntries.forEach(({ box, compound }) => {
-        if (compoundOnly && !compound) return;
         const pad = compound ? 3 : 9;
         const x1 = box.x1 - pad, x2 = box.x2 + pad;
         const y1 = box.y1 - pad, y2 = box.y2 + pad;
         route.verticals.forEach(vertical => {
-          if (vertical.x >= x1 && vertical.x <= x2 && overlaps(vertical.start, vertical.end, y1, y2)) score += compound ? 1000 : 12;
+          if (vertical.x >= x1 && vertical.x <= x2 && overlaps(vertical.start, vertical.end, y1, y2)) score += compound ? 50000 : 20000;
         });
         route.horizontals.forEach(horizontal => {
-          if (horizontal.y >= y1 && horizontal.y <= y2 && overlaps(horizontal.start, horizontal.end, x1, x2)) score += compound ? 1000 : 12;
+          if (horizontal.y >= y1 && horizontal.y <= y2 && overlaps(horizontal.start, horizontal.end, x1, x2)) score += compound ? 50000 : 20000;
         });
       });
       return score;
@@ -939,8 +938,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const obstacleEntries = edgeObstacles(edge);
       const normalTurnRatio = target.x - source.x >= 56 ? chooseTurnRatio(edge, source, target) : null;
       const normalRoute = normalTurnRatio == null ? null : orthogonalRouteSegments(source, target, normalTurnRatio);
-      const crossesCompound = normalRoute && routeObstacleScore(normalRoute, obstacleEntries, true) > 0;
-      if (normalTurnRatio == null || crossesCompound) {
+      const crossesObstacle = normalRoute && routeObstacleScore(normalRoute, obstacleEntries) > 0;
+      if (normalTurnRatio == null || crossesObstacle) {
         const clearance = 22;
         const padClearance = node => node.data('kind') === 'pad'
           ? clearance + (node.scratch('_boundaryOrder') || 0) * 10
@@ -950,28 +949,66 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const sourceStubX = source.x + sourceClearance;
         const targetStubX = target.x - targetClearance;
         const midpointY = (source.y + target.y) / 2;
+        const midpointX = (source.x + target.x) / 2;
         const laneCandidates = [...new Set([
           midpointY,
           Math.min(source.y, target.y) - 48,
           Math.max(source.y, target.y) + 48,
-          ...obstacleEntries.flatMap(({ box, compound }) => compound
+          ...obstacleEntries.flatMap(({ box }) => overlaps(sourceStubX, targetStubX, box.x1, box.x2)
             ? [box.y1 - clearance, box.y2 + clearance]
             : [])
         ].map(value => value.toFixed(2)))].map(Number);
         let best;
+        const considerRoute = (controls, detourDistance) => {
+          const route = orthogonalPolylineSegments([source, ...controls, target]);
+          let score = detourDistance / 100;
+          score += routeObstacleScore(route, obstacleEntries);
+          score += orthogonalRouteOverlapScore(route, reservedRoutes);
+          if (!best || score < best.score) best = { controls, route, score };
+        };
         laneCandidates.forEach(laneY => {
-          const controls = [
+          considerRoute([
             { x: sourceStubX, y: source.y },
             { x: sourceStubX, y: laneY },
             { x: targetStubX, y: laneY },
             { x: targetStubX, y: target.y }
-          ];
-          const route = orthogonalPolylineSegments([source, ...controls, target]);
-          let score = Math.abs(laneY - midpointY) / 100;
-          score += routeObstacleScore(route, obstacleEntries);
-          score += orthogonalRouteOverlapScore(route, reservedRoutes);
-          if (!best || score < best.score) best = { controls, route, score };
+          ], Math.abs(laneY - midpointY));
         });
+
+        // A horizontal escape lane cannot help when one of its vertical legs
+        // is trapped behind a container. Also consider a vertical trunk to
+        // either side of each compound box while preserving right-side exits
+        // and left-side entries at the actual endpoints.
+        const trunkCandidates = [...new Set([
+          midpointX,
+          Math.min(source.x, target.x) - 48,
+          Math.max(source.x, target.x) + 48,
+          ...obstacleEntries.flatMap(({ box }) => overlaps(source.y, target.y, box.y1, box.y2)
+            ? [box.x1 - clearance, box.x2 + clearance]
+            : [])
+        ].map(value => value.toFixed(2)))].map(Number);
+        trunkCandidates.forEach(trunkX => {
+          considerRoute([
+            { x: sourceStubX, y: source.y },
+            { x: trunkX, y: source.y },
+            { x: trunkX, y: target.y },
+            { x: targetStubX, y: target.y }
+          ], Math.abs(trunkX - midpointX));
+        });
+
+        // Nested containers can block both a straight vertical trunk and a
+        // straight horizontal lane. Corner candidates combine the two escape
+        // directions so the route can go around the outside of the blocking
+        // rectangle instead of accepting a path through its interior.
+        trunkCandidates.forEach(trunkX => laneCandidates.forEach(laneY => {
+          considerRoute([
+            { x: sourceStubX, y: source.y },
+            { x: trunkX, y: source.y },
+            { x: trunkX, y: laneY },
+            { x: targetStubX, y: laneY },
+            { x: targetStubX, y: target.y }
+          ], Math.abs(trunkX - midpointX) + Math.abs(laneY - midpointY));
+        }));
         const geometry = segmentDataForControls(source, target, best.controls);
         edge.scratch('_appliedTurn', null);
         edge.scratch('_routeSegments', best.route);
