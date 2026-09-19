@@ -6,6 +6,18 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
   'use strict';
 
   const $ = (id) => document.getElementById(id);
+  const EXPAND_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
+      <rect x="0.75" y="0.75" width="16.5" height="16.5" rx="4" fill="#0b151d" stroke="#67d9ce" stroke-width="1.5"/>
+      <path d="M5 9h8M9 5v8" fill="none" stroke="#c4fff9" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+  `)}`;
+  const COLLAPSE_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
+      <rect x="0.75" y="0.75" width="16.5" height="16.5" rx="4" fill="#0b151d" stroke="#67d9ce" stroke-width="1.5"/>
+      <path d="M5 9h8" fill="none" stroke="#c4fff9" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+  `)}`;
   const ui = {
     fileName: $('fileName'), fileInput: $('fileInput'), openButton: $('openButton'),
     search: $('searchInput'), stats: $('stats'), details: $('details'), loading: $('loading'),
@@ -379,7 +391,7 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
       const nodeHeight = padRows ? Math.max(baseHeight, 42 + padRows * 18) : baseHeight;
       const nodeLabelOffsetY = padRows ? -(nodeHeight / 2 - 13) : 0;
       return {
-        data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), collapsed, nodeHeight, nodeLabelOffsetY },
+        data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), collapsed, collapsible: item.kind === 'bin' && id !== g.pipeline, nodeHeight, nodeLabelOffsetY },
         classes: padRows ? 'has-pad-badges' : ''
       };
     });
@@ -411,8 +423,9 @@ import { isRedundantProxyPad, numberedPadOrder, padsShareFlowChannel, preferredP
       { selector: 'node[typeClass="sink"]', style: { 'background-color': '#2b1d19', 'border-color': '#f5a65b' } },
       { selector: 'node[typeClass="branch"]', style: { 'background-color': '#251d3d', 'border-color': '#a78bfa', shape: 'round-rectangle', width: 126, height: 48 } },
       { selector: 'node[typeClass="queue"]', style: { width: 76, height: 34, 'font-size': 10, 'border-style': 'dashed', 'border-color': '#718198' } },
-      { selector: 'node[kind="bin"][collapsed]', style: { 'background-color': '#14202b', 'border-color': '#58a6b7', 'border-width': 2, width: 210, height: 76, 'text-wrap': 'wrap', 'text-max-width': 190, 'font-size': 11, 'line-height': 1.25, 'background-image-opacity': 0 } },
+      { selector: 'node[kind="bin"][collapsed]', style: { 'background-color': '#14202b', 'border-color': '#58a6b7', 'border-width': 2, width: 210, height: 76, 'text-wrap': 'wrap', 'text-max-width': 172, 'font-size': 11, 'line-height': 1.25, 'background-image': EXPAND_ICON, 'background-image-opacity': 1, 'background-fit': 'none', 'background-repeat': 'no-repeat', 'background-width': '18px', 'background-height': '18px', 'background-position-x': '96%', 'background-position-y': '10%' } },
       { selector: 'node[kind="bin"]:parent', style: { 'background-color': '#0e1722', 'background-opacity': .72, 'border-color': '#30445b', 'border-width': 1.5, 'border-style': 'dashed', 'padding': 28, 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 16, 'font-size': 12, 'font-weight': 650, color: '#b9ccdc', 'z-compound-depth': 'bottom' } },
+      { selector: 'node[kind="bin"][collapsible]:parent', style: { 'background-image': COLLAPSE_ICON, 'background-image-opacity': 1, 'background-fit': 'none', 'background-repeat': 'no-repeat', 'background-width': '18px', 'background-height': '18px', 'background-position-x': '98%', 'background-position-y': '2%' } },
       { selector: 'node.has-pad-badges:childless', style: { height: 'data(nodeHeight)', 'text-valign': 'center', 'text-margin-y': 'data(nodeLabelOffsetY)' } },
       { selector: 'node[kind="pad"]', style: { width: 'data(padWidth)', height: 14, shape: 'round-rectangle', 'font-size': 8, 'font-weight': 600, 'background-color': '#182536', 'border-width': 1, 'border-color': '#74849b', color: '#dbe7f2', 'text-wrap': 'ellipsis', 'text-max-width': 50, 'text-valign': 'center', 'text-halign': 'center', 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1001 } },
       { selector: 'node[kind="pad"][typeClass="sink"]', style: { 'background-color': '#39271d', 'border-color': '#f5a65b', color: '#ffd9b3' } },
