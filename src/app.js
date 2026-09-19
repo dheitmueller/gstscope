@@ -376,7 +376,9 @@
       { selector: 'edge:selected', style: { 'line-color': '#4dd6c6', 'target-arrow-color': '#4dd6c6', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 999 } },
       { selector: '.trace-dim', style: { opacity: .12 } },
       { selector: 'node.trace-node', style: { 'border-color': '#77e6da', 'border-width': 2.5, 'z-index': 998 } },
-      { selector: 'edge.trace-edge', style: { 'line-color': '#4dd6c6', 'target-arrow-color': '#4dd6c6', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 998 } },
+      { selector: 'edge.trace-edge', style: { 'line-color': '#a78bfa', 'target-arrow-color': '#a78bfa', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 998 } },
+      { selector: 'edge.trace-in', style: { 'line-color': '#f5a65b', 'target-arrow-color': '#f5a65b', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 998 } },
+      { selector: 'edge.trace-out', style: { 'line-color': '#4dd6c6', 'target-arrow-color': '#4dd6c6', width: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 998 } },
       { selector: '.search-match', style: { 'border-color': '#f5d06f', 'border-width': 4 } },
       { selector: '.search-dim', style: { opacity: .2 } }
     ];
@@ -388,19 +390,27 @@
   }
 
   function clearTrace() {
-    state.cy?.elements().removeClass('trace-node trace-edge trace-dim');
+    state.cy?.elements().removeClass('trace-node trace-edge trace-in trace-out trace-dim');
   }
 
   function focusTrace(target) {
     const cy = state.cy;
     if (!cy || !target?.length) return;
     clearTrace();
-    const focus = target.isNode()
-      ? target.union(target.connectedEdges()).union(target.neighborhood('node'))
-      : target.union(target.source()).union(target.target());
+    let focus;
+    if (target.isNode()) {
+      const coreNodes = target.union(target.descendants());
+      const incidentEdges = coreNodes.connectedEdges();
+      focus = coreNodes.union(incidentEdges).union(incidentEdges.connectedNodes());
+      incidentEdges.filter(edge => coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-edge');
+      incidentEdges.filter(edge => !coreNodes.contains(edge.source()) && coreNodes.contains(edge.target())).addClass('trace-in');
+      incidentEdges.filter(edge => coreNodes.contains(edge.source()) && !coreNodes.contains(edge.target())).addClass('trace-out');
+    } else {
+      focus = target.union(target.source()).union(target.target());
+      target.addClass('trace-edge');
+    }
     cy.elements().not(focus).addClass('trace-dim');
     focus.filter('node').addClass('trace-node');
-    focus.filter('edge').addClass('trace-edge');
   }
 
   function render({ layout = true, fit = true } = {}) {
@@ -687,8 +697,15 @@
 
   function toggleBin(id) {
     if (id === state.graph.pipeline) return;
-    if (state.collapsed.has(id)) state.collapsed.delete(id); else state.collapsed.add(id);
-    render({ layout: true, fit: true });
+    const expanding = state.collapsed.has(id);
+    if (expanding) state.collapsed.delete(id); else state.collapsed.add(id);
+    render({ layout: true, fit: !expanding });
+    if (expanding) {
+      const bin = state.cy.getElementById(id);
+      const descendants = bin.descendants();
+      const boundary = descendants.connectedEdges().connectedNodes();
+      state.cy.fit(bin.union(descendants).union(boundary), 58);
+    }
     showItem(id);
   }
 
