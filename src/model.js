@@ -14,3 +14,12 @@ export function preferredPadId(pads, endpointPadId, equivalent) {
   if (exact) return exact.id;
   return pads.find(pad => equivalent(pad.id, endpointPadId))?.id || null;
 }
+
+export function isRedundantProxyPad(pad, pads, aliases) {
+  if (!/^proxypad/i.test(pad?.name || '')) return false;
+  const equivalents = aliases.get(pad.id) || new Set();
+  return [...equivalents].some(id => {
+    const candidate = pads.get(id);
+    return candidate && candidate.element === pad.element && !/^proxypad/i.test(candidate.name || '');
+  });
+}

@@ -1,5 +1,5 @@
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
-import { preferredPadId, projectedEdgeKey } from './model.js';
+import { isRedundantProxyPad, preferredPadId, projectedEdgeKey } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -336,6 +336,10 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
     for (const pad of g.pads.values()) {
       const owner = pad.element;
       if (!nodeSet.has(owner) || hidden.has(owner)) continue;
+      // A bin's proxypad and its concrete ghost-pad target are two DOT nodes
+      // for one logical boundary port. Show the meaningful concrete name and
+      // keep the alias only in the parsed model for endpoint resolution.
+      if (isRedundantProxyPad(pad, g.pads, g.padAliases)) continue;
       const groups = allPadsByOwner.get(owner) || { sink: [], src: [] };
       (pad.direction === 'src' ? groups.src : groups.sink).push(pad);
       allPadsByOwner.set(owner, groups);
@@ -367,7 +371,7 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
       const collapsed = state.collapsed.has(id);
       const padGroups = padsByOwner.get(id);
       const padRows = padGroups ? Math.max(padGroups.sink.length, padGroups.src.length) : 0;
-      const baseHeight = collapsed ? 76 : isQueue(item) ? 34 : isTee(item) ? 74 : 48;
+      const baseHeight = collapsed ? 76 : isQueue(item) ? 34 : 48;
       const nodeHeight = padRows ? Math.max(baseHeight, 42 + padRows * 18) : baseHeight;
       const nodeLabelOffsetY = padRows ? -(nodeHeight / 2 - 13) : 0;
       return {
@@ -401,11 +405,11 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
       { selector: 'node', style: { 'background-color': '#151e2b', 'border-color': '#35445a', 'border-width': 1.5, 'shape': 'round-rectangle', width: 126, height: 48, label: 'data(label)', color: '#edf3f8', 'font-size': 12, 'font-weight': 600, 'text-valign': 'center', 'text-halign': 'center', 'text-wrap': 'ellipsis', 'text-max-width': 110, 'overlay-opacity': 0 } },
       { selector: 'node[typeClass="source"]', style: { 'background-color': '#102b2a', 'border-color': '#4dd6c6' } },
       { selector: 'node[typeClass="sink"]', style: { 'background-color': '#2b1d19', 'border-color': '#f5a65b' } },
-      { selector: 'node[typeClass="branch"]', style: { 'background-color': '#251d3d', 'border-color': '#a78bfa', shape: 'diamond', width: 74, height: 74 } },
+      { selector: 'node[typeClass="branch"]', style: { 'background-color': '#251d3d', 'border-color': '#a78bfa', shape: 'round-rectangle', width: 126, height: 48 } },
       { selector: 'node[typeClass="queue"]', style: { width: 76, height: 34, 'font-size': 10, 'border-style': 'dashed', 'border-color': '#718198' } },
       { selector: 'node[kind="bin"][collapsed]', style: { 'background-color': '#14202b', 'border-color': '#58a6b7', 'border-width': 2, width: 210, height: 76, 'text-wrap': 'wrap', 'text-max-width': 190, 'font-size': 11, 'line-height': 1.25, 'background-image-opacity': 0 } },
-      { selector: 'node[kind="bin"]:parent', style: { 'background-color': '#0e1722', 'background-opacity': .72, 'border-color': '#30445b', 'border-width': 1.5, 'border-style': 'dashed', 'padding': 28, 'text-valign': 'top', 'text-halign': 'left', 'font-size': 11, color: '#92a8bd', 'z-compound-depth': 'bottom' } },
-      { selector: 'node.has-pad-badges', style: { height: 'data(nodeHeight)', 'text-valign': 'center', 'text-margin-y': 'data(nodeLabelOffsetY)' } },
+      { selector: 'node[kind="bin"]:parent', style: { 'background-color': '#0e1722', 'background-opacity': .72, 'border-color': '#30445b', 'border-width': 1.5, 'border-style': 'dashed', 'padding': 28, 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 16, 'font-size': 12, 'font-weight': 650, color: '#b9ccdc', 'z-compound-depth': 'bottom' } },
+      { selector: 'node.has-pad-badges:childless', style: { height: 'data(nodeHeight)', 'text-valign': 'center', 'text-margin-y': 'data(nodeLabelOffsetY)' } },
       { selector: 'node[kind="pad"]', style: { width: 'data(padWidth)', height: 14, shape: 'round-rectangle', 'font-size': 8, 'font-weight': 600, 'background-color': '#182536', 'border-width': 1, 'border-color': '#74849b', color: '#dbe7f2', 'text-wrap': 'ellipsis', 'text-max-width': 50, 'text-valign': 'center', 'text-halign': 'center', 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1001 } },
       { selector: 'node[kind="pad"][typeClass="sink"]', style: { 'background-color': '#39271d', 'border-color': '#f5a65b', color: '#ffd9b3' } },
       { selector: 'node[kind="pad"][typeClass="src"]', style: { 'background-color': '#133330', 'border-color': '#4dd6c6', color: '#baf5ee' } },
@@ -566,9 +570,7 @@ import { preferredPadId, projectedEdgeKey } from './model.js';
     const cy = state.cy;
     if (!cy) return;
     const endpoint = (node, side, offset) => {
-      const branch = node.data('typeClass') === 'branch';
-      const horizontal = branch ? Math.max(10, 50 - Math.abs(offset)) : 50;
-      return `${side === 'source' ? horizontal : -horizontal}% ${offset}%`;
+      return `${side === 'source' ? 50 : -50}% ${offset}%`;
     };
     const assignPorts = (node, side) => {
       const edges = [...(side === 'source' ? node.outgoers('edge') : node.incomers('edge'))]

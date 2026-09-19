@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
-import { preferredPadId, projectedEdgeKey } from '../src/model.js';
+import { isRedundantProxyPad, preferredPadId, projectedEdgeKey } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -47,5 +47,19 @@ const aliases = new Set(['proxypad9:video_0', 'video_0:proxypad9']);
 const equivalent = (a, b) => a === b || aliases.has(`${a}:${b}`);
 assert.equal(preferredPadId(aliasedPads, 'video_0', equivalent), 'video_0');
 assert.equal(preferredPadId(aliasedPads, 'internal-video-src', (a, b) => a === 'video_0' && b === 'internal-video-src'), 'video_0');
+
+const padMap = new Map([
+  ['proxy', { id: 'proxy', name: 'proxypad37', element: 'bin' }],
+  ['concrete', { id: 'concrete', name: 'video_0_0101:output0', element: 'bin' }],
+  ['other', { id: 'other', name: 'proxypad99', element: 'other-bin' }]
+]);
+const padAliasMap = new Map([
+  ['proxy', new Set(['concrete'])],
+  ['concrete', new Set(['proxy'])],
+  ['other', new Set(['concrete'])]
+]);
+assert.equal(isRedundantProxyPad(padMap.get('proxy'), padMap, padAliasMap), true);
+assert.equal(isRedundantProxyPad(padMap.get('concrete'), padMap, padAliasMap), false);
+assert.equal(isRedundantProxyPad(padMap.get('other'), padMap, padAliasMap), false);
 
 console.log('Validated orthogonal routing control points');
