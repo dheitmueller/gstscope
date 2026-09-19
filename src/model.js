@@ -23,3 +23,13 @@ export function isRedundantProxyPad(pad, pads, aliases) {
     return candidate && candidate.element === pad.element && !/^proxypad/i.test(candidate.name || '');
   });
 }
+
+export function padsShareFlowChannel(inputPad, outputPad) {
+  if (!inputPad || !outputPad || inputPad.element !== outputPad.element) return false;
+  const channel = pad => {
+    const match = /^(?:sink|src)(?:_(.+))?$/i.exec(pad.name || '');
+    return match ? match[1] || '__single__' : null;
+  };
+  const inputChannel = channel(inputPad);
+  return inputChannel !== null && inputChannel === channel(outputPad);
+}

@@ -1,5 +1,5 @@
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from './geometry.js';
-import { isRedundantProxyPad, preferredPadId, projectedEdgeKey } from './model.js';
+import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -308,9 +308,13 @@ import { isRedundantProxyPad, preferredPadId, projectedEdgeKey } from './model.j
       }
       const nextSeen = new Set(seen).add(edge.target);
       let next = outgoing.get(edge.target) || [];
-      if (transparent.has(edge.target)) {
+      if (transparent.has(edge.target) || hidden.has(edge.target)) {
         const incomingPad = edge.links.at(-1)?.sinkPad;
-        const matched = next.filter(n => padsEquivalent(incomingPad, n.links[0]?.sourcePad));
+        const matched = next.filter(n => {
+          const outgoingPad = n.links[0]?.sourcePad;
+          if (transparent.has(edge.target)) return padsEquivalent(incomingPad, outgoingPad);
+          return padsShareFlowChannel(g.pads.get(incomingPad), g.pads.get(outgoingPad));
+        });
         next = matched.length ? matched : next.length === 1 ? next : [];
       }
       const nextPath = hidden.has(edge.target) ? [...path, edge.target] : path;

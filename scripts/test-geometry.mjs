@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData } from '../src/geometry.js';
-import { isRedundantProxyPad, preferredPadId, projectedEdgeKey } from '../src/model.js';
+import { isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -61,5 +61,34 @@ const padAliasMap = new Map([
 assert.equal(isRedundantProxyPad(padMap.get('proxy'), padMap, padAliasMap), true);
 assert.equal(isRedundantProxyPad(padMap.get('concrete'), padMap, padAliasMap), false);
 assert.equal(isRedundantProxyPad(padMap.get('other'), padMap, padAliasMap), false);
+
+assert.equal(
+  padsShareFlowChannel(
+    { name: 'sink_0', element: 'multiqueue' },
+    { name: 'src_0', element: 'multiqueue' }
+  ),
+  true
+);
+assert.equal(
+  padsShareFlowChannel(
+    { name: 'sink_0', element: 'multiqueue' },
+    { name: 'src_1', element: 'multiqueue' }
+  ),
+  false
+);
+assert.equal(
+  padsShareFlowChannel(
+    { name: 'sink', element: 'queue' },
+    { name: 'src', element: 'queue' }
+  ),
+  true
+);
+assert.equal(
+  padsShareFlowChannel(
+    { name: 'sink_0', element: 'queue-a' },
+    { name: 'src_0', element: 'queue-b' }
+  ),
+  false
+);
 
 console.log('Validated orthogonal routing control points');
