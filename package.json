@@ -1,0 +1,22 @@
+{
+  "name": "gstscope",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive browser-based explorer for GStreamer DOT pipeline dumps",
+  "type": "module",
+  "engines": {
+    "node": "24.x",
+    "npm": ">=11"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run build && node --check dist/app.js && node scripts/validate-build.mjs",
+    "dev": "npm run build && node scripts/serve.mjs"
+  },
+  "dependencies": {
+    "@viz-js/viz": "3.30.0",
+    "cytoscape": "3.34.3",
+    "cytoscape-dagre": "4.0.1",
+    "dagre": "0.8.5"
+  }
+}
