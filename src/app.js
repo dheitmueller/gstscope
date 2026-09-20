@@ -1,8 +1,8 @@
-import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-73';
-import { auditLayout } from './layout-quality.js?v=20260920-73';
-import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-73';
-import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-73';
-import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-73';
+import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-74';
+import { auditLayout } from './layout-quality.js?v=20260920-74';
+import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-74';
+import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-74';
+import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-74';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
