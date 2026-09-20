@@ -25,7 +25,8 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
     fileName: $('fileName'), fileInput: $('fileInput'), openButton: $('openButton'),
     search: $('searchInput'), stats: $('stats'), details: $('details'), loading: $('loading'),
     queues: $('toggleQueues'), tees: $('toggleTees'), pads: $('togglePads'), moving: $('toggleMoving'), caps: $('capsMode'),
-    dropOverlay: $('dropOverlay'), compare: $('compareDialog'), padTooltip: $('padTooltip')
+    dropOverlay: $('dropOverlay'), compare: $('compareDialog'), padTooltip: $('padTooltip'),
+    welcome: $('welcomeDialog'), tourCallout: $('tourCallout')
   };
 
   const state = {
@@ -49,6 +50,83 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
   let loadSequence = 0;
   const query = new URLSearchParams(location.search);
   const requestedPreset = ['architectural', 'normal', 'debug'].includes(query.get('preset')) ? query.get('preset') : 'architectural';
+  const ONBOARDING_KEY = 'gstscope:onboarding:v1';
+  const tourSteps = [
+    {
+      target: () => $('sampleSelect'),
+      title: 'Explore a sample',
+      body: 'Choose a built-in pipeline to see how GstScope handles bins, branches, and different media flows.',
+      action: 'Next'
+    },
+    {
+      target: () => ui.openButton,
+      title: 'Open your pipeline',
+      body: 'Open a GStreamer DOT dump from your computer. The file is processed locally and is not uploaded.',
+      action: 'Got it'
+    }
+  ];
+  let tourIndex = -1;
+  let tourTarget = null;
+
+  function readOnboarding() {
+    try { return JSON.parse(localStorage.getItem(ONBOARDING_KEY) || 'null'); }
+    catch { return null; }
+  }
+
+  function writeOnboarding(value) {
+    try { localStorage.setItem(ONBOARDING_KEY, JSON.stringify(value)); }
+    catch { /* Private browsing or disabled storage should not block the app. */ }
+  }
+
+  function positionTourCallout() {
+    if (ui.tourCallout.hidden || !tourTarget) return;
+    const target = tourTarget.getBoundingClientRect();
+    const callout = ui.tourCallout;
+    const margin = 12;
+    const gap = 13;
+    const width = callout.offsetWidth;
+    const height = callout.offsetHeight;
+    const below = target.bottom + gap + height <= innerHeight - margin;
+    const top = below ? target.bottom + gap : Math.max(margin, target.top - height - gap);
+    const left = Math.min(innerWidth - width - margin, Math.max(margin, target.left + target.width / 2 - width / 2));
+    callout.dataset.placement = below ? 'below' : 'above';
+    callout.style.left = `${left}px`;
+    callout.style.top = `${top}px`;
+    const arrow = callout.querySelector('.tour-arrow');
+    arrow.style.left = `${Math.min(width - 22, Math.max(10, target.left + target.width / 2 - left - 6))}px`;
+  }
+
+  function finishOnboarding() {
+    tourTarget?.classList.remove('tour-target');
+    tourTarget = null;
+    tourIndex = -1;
+    ui.tourCallout.hidden = true;
+    writeOnboarding({ complete: true });
+  }
+
+  function showTourStep(index) {
+    tourTarget?.classList.remove('tour-target');
+    if (index >= tourSteps.length) return finishOnboarding();
+    tourIndex = index;
+    const step = tourSteps[index];
+    tourTarget = step.target();
+    if (!tourTarget) return finishOnboarding();
+    tourTarget.classList.add('tour-target');
+    $('tourStep').textContent = `Quick tour · ${index + 1} of ${tourSteps.length}`;
+    $('tourTitle').textContent = step.title;
+    $('tourBody').textContent = step.body;
+    $('nextTour').textContent = step.action;
+    ui.tourCallout.hidden = false;
+    writeOnboarding({ welcome: true, step: index });
+    requestAnimationFrame(positionTourCallout);
+  }
+
+  function startOnboarding() {
+    const saved = readOnboarding();
+    if (saved?.complete) return;
+    if (saved?.welcome) return showTourStep(Number.isInteger(saved.step) ? saved.step : 0);
+    ui.welcome.showModal();
+  }
 
   function showLoading(loadId = loadSequence) {
     clearTimeout(startupTimer);
@@ -2503,6 +2581,19 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
     }
   });
   $('closeCompare').addEventListener('click', () => ui.compare.close());
+  $('startTour').addEventListener('click', () => {
+    ui.welcome.close();
+    showTourStep(0);
+  });
+  $('skipWelcome').addEventListener('click', () => {
+    ui.welcome.close();
+    finishOnboarding();
+  });
+  ui.welcome.addEventListener('cancel', finishOnboarding);
+  $('skipTour').addEventListener('click', finishOnboarding);
+  $('nextTour').addEventListener('click', () => showTourStep(tourIndex + 1));
+  addEventListener('resize', positionTourCallout);
+  addEventListener('scroll', positionTourCallout, true);
 
   let dragDepth = 0;
   document.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; ui.dropOverlay.classList.add('show'); });
@@ -2519,5 +2610,9 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
   addEventListener('error', event => { if (state.building) showStartupError(event.error || new Error(event.message || 'Unexpected startup failure.')); });
   addEventListener('unhandledrejection', event => { if (state.building) showStartupError(event.reason instanceof Error ? event.reason : new Error(String(event.reason))); });
   const initialSample = SAMPLE_CATALOG.some(sample => sample.id === query.get('sample')) ? query.get('sample') : SAMPLE_CATALOG[0].id;
-  loadSample(initialSample).catch(showStartupError);
+  loadSample(initialSample)
+    .then(() => {
+      if (state.graph && !ui.loading.classList.contains('error')) requestAnimationFrame(() => requestAnimationFrame(startOnboarding));
+    })
+    .catch(showStartupError);
 })();
