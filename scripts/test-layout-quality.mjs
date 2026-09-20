@@ -107,7 +107,30 @@ const sparseBin = auditLayout({
   ],
   edges: []
 });
-assert.ok(checks(sparseBin).has('bin-utilization'));
+assert.ok(checks(sparseBin).has('bin-density'));
+
+const oversizedBin = auditLayout({
+  nodes: [
+    node('huge-bin', 0, 0, 2400, 1800, { kind: 'bin', isParent: true }),
+    ...Array.from({ length: 4 }, (_, index) => node(`child-${index}`, 40 + index * 120, 40, 120 + index * 120, 90, {
+      parent: 'huge-bin', ancestors: ['huge-bin']
+    }))
+  ],
+  edges: []
+});
+assert.equal(oversizedBin.passed, false);
+assert.ok(oversizedBin.violations.some(violation => violation.check === 'bin-density' && violation.severity === 'error'));
+
+const distantBins = auditLayout({
+  nodes: [
+    node('source-bin', 0, 0, 200, 180, { kind: 'bin', isParent: true }),
+    node('target-bin', 3000, 0, 3200, 180, { kind: 'bin', isParent: true })
+  ],
+  edges: [edge('far-container-edge', 'source-bin', 'target-bin', [{ x: 200, y: 90 }, { x: 3000, y: 90 }])]
+});
+assert.ok(distantBins.violations.some(violation =>
+  violation.check === 'connected-container-gap' && violation.severity === 'error' &&
+  violation.message.includes('source-bin → target-bin')));
 
 const labelCollision = auditLayout({
   nodes: [

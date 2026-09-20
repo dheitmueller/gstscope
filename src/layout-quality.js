@@ -1,5 +1,18 @@
 const area = box => Math.max(0, box.x2 - box.x1) * Math.max(0, box.y2 - box.y1);
 
+const median = values => {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+
+const boxGap = (a, b) => {
+  const horizontal = Math.max(0, a.x1 - b.x2, b.x1 - a.x2);
+  const vertical = Math.max(0, a.y1 - b.y2, b.y1 - a.y2);
+  return { horizontal, vertical, distance: horizontal + vertical };
+};
+
 const intersection = (a, b, inset = 0) => {
   const x1 = Math.max(a.x1 + inset, b.x1 + inset);
   const y1 = Math.max(a.y1 + inset, b.y1 + inset);
@@ -82,6 +95,10 @@ export function auditLayout(snapshot, overrides = {}) {
     minSharedSegment: 80,
     minBinOccupancy: .08,
     minLargeBinArea: 250000,
+    maxBinAreaPerLeafWarning: 12,
+    maxBinAreaPerLeafError: 30,
+    maxContainerGapWarning: 700,
+    maxContainerGapError: 2400,
     ...overrides
   };
   const violations = [];
@@ -90,6 +107,7 @@ export function auditLayout(snapshot, overrides = {}) {
   const leafNodes = graphNodes.filter(node => !node.isParent);
   const labels = snapshot.nodes.filter(node => node.kind === 'edge-label');
   const nodeById = new Map(graphNodes.map(node => [node.id, node]));
+  const typicalLeafArea = median(leafNodes.map(node => area(node.box)).filter(value => value > 0));
 
   const siblings = new Map();
   graphNodes.forEach(node => {
@@ -119,9 +137,33 @@ export function auditLayout(snapshot, overrides = {}) {
     const descendants = graphNodes.filter(node => !node.isParent && node.ancestors?.includes(bin.id));
     if (!descendants.length || area(bin.box) < limits.minLargeBinArea) return;
     const occupied = descendants.reduce((sum, node) => sum + area(node.box), 0);
-    const ratio = occupied / area(bin.box);
-    if (ratio < limits.minBinOccupancy) add('warning', 'bin-utilization', `${bin.label || bin.id} uses only ${(ratio * 100).toFixed(1)}% of its area`, {
-      ids: [bin.id], occupancy: Number(ratio.toFixed(4)), binArea: Math.round(area(bin.box))
+    const occupancy = occupied / area(bin.box);
+    const expectedPackedArea = descendants.length * typicalLeafArea;
+    const areaPerLeafRatio = expectedPackedArea > 0 ? area(bin.box) / expectedPackedArea : 0;
+    if (occupancy >= limits.minBinOccupancy && areaPerLeafRatio <= limits.maxBinAreaPerLeafWarning) return;
+    const severity = areaPerLeafRatio > limits.maxBinAreaPerLeafError ? 'error' : 'warning';
+    add(severity, 'bin-density', `${bin.label || bin.id} spans ${Math.round(area(bin.box)).toLocaleString()}px² for ${descendants.length} visible element${descendants.length === 1 ? '' : 's'} (${areaPerLeafRatio.toFixed(1)}× typical packed area)`, {
+      ids: [bin.id], leafCount: descendants.length, occupancy: Number(occupancy.toFixed(4)),
+      binArea: Math.round(area(bin.box)), typicalLeafArea: Math.round(typicalLeafArea),
+      areaPerLeafRatio: Number(areaPerLeafRatio.toFixed(2))
+    });
+  });
+
+  const checkedContainerConnections = new Set();
+  snapshot.edges.forEach(edge => {
+    const source = nodeById.get(edge.sourceOwner);
+    const target = nodeById.get(edge.targetOwner);
+    if (!source || !target || (!source.isParent && !target.isParent)) return;
+    const key = `${edge.logicalId || edge.id}|${source.id}|${target.id}`;
+    if (checkedContainerConnections.has(key)) return;
+    checkedContainerConnections.add(key);
+    const gap = boxGap(source.box, target.box);
+    if (gap.distance <= limits.maxContainerGapWarning) return;
+    const severity = gap.distance > limits.maxContainerGapError ? 'error' : 'warning';
+    add(severity, 'connected-container-gap', `${source.label || source.id} → ${target.label || target.id} leaves ${Math.round(gap.distance).toLocaleString()}px between connected containers`, {
+      ids: [source.id, target.id], logicalId: edge.logicalId || edge.id,
+      horizontalGap: Math.round(gap.horizontal), verticalGap: Math.round(gap.vertical),
+      distance: Math.round(gap.distance), boxes: [source.box, target.box]
     });
   });
 

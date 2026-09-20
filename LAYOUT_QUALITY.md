@@ -21,6 +21,8 @@ The audit must report zero errors:
 - every child remains inside its parent bin;
 - no route crosses through an unrelated node or bin;
 - no route between objects in the same container leaves and re-enters it.
+- no bin is extremely oversized for its visible element count;
+- no logically connected containers are separated by a multi-screen gap.
 
 ## Regression warnings
 
@@ -28,10 +30,10 @@ Warnings identify the first places to inspect and compare with the previous
 accepted baseline:
 
 - excessive route turns or detours;
-- very long links or excessive gaps between connected objects;
+- very long links or excessive gaps between connected objects or containers;
 - long route segments shared by unrelated links;
 - link labels overlapping nodes;
-- expanded bins whose contents occupy very little of their area.
+- expanded bins whose area is disproportionate to their visible element count.
 
 The report includes the involved Cytoscape IDs and measured values. A warning is
 not automatically fatal, but a new or materially worse warning must be understood

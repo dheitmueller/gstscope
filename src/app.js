@@ -336,6 +336,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOf
           logicalId: edge.data('logicalEdgeId') || edge.id(),
           sourceOwner: sourceOwner.id(),
           targetOwner: targetOwner.id(),
+          sourceLabel: sourceOwner.data('label') || sourceOwner.id(),
+          targetLabel: targetOwner.data('label') || targetOwner.id(),
           sourceParent: sourceOwner.parent().id() || '',
           targetParent: targetOwner.parent().id() || '',
           points: renderedRoutePoints(edge),

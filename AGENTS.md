@@ -38,10 +38,11 @@ Before showing or deploying a result:
 2. Load the canonical fixture locally and wait for layout settling.
 3. Read `window.gstscopeLayoutAudit()` and require zero hard errors:
    sibling overlap, containment failure, route-through-node, and container
-   excursion/re-entry.
+   excursion/re-entry, extreme bin density, and multi-screen gaps between
+   connected containers.
 4. Review all new or worsened warnings for excessive turns, route detours, route
    length, connected-object gaps, shared route segments, label/node overlap, and
-   poor bin utilization. Inspect the highest-cost offenders visually.
+   poor bin density. Inspect the highest-cost offenders visually.
 5. Check the built-in Architectural and stress samples when the change affects
    projection, expansion, routing, labels, pads, or compound layout.
 6. Run `git diff --check` and inspect the final diff before committing.
