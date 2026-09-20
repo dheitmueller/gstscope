@@ -843,7 +843,20 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const ownerWidth = owner.outerWidth();
         const ownerHeight = owner.outerHeight();
         const firstY = ownerPosition.y + ownerHeight / 2 - 5 - totalHeight + badgeHeight / 2;
-        pads.forEach((pad, index) => {
+        const peerY = pad => {
+          const edge = cy.edges().filter(candidate => direction === 'src'
+            ? candidate.source().same(owner) && candidate.data('sourcePadId') === pad.data('padId')
+            : candidate.target().same(owner) && candidate.data('targetPadId') === pad.data('padId'))[0];
+          if (!edge?.length) return null;
+          return (direction === 'src' ? edge.target() : edge.source()).position('y');
+        };
+        const orderedPads = pads.map((pad, declarationOrder) => ({ pad, declarationOrder, targetY: peerY(pad) }))
+          .sort((a, b) => {
+            if (Number.isFinite(a.targetY) && Number.isFinite(b.targetY) && Math.abs(a.targetY - b.targetY) > 1) return a.targetY - b.targetY;
+            if (Number.isFinite(a.targetY) !== Number.isFinite(b.targetY)) return Number.isFinite(a.targetY) ? -1 : 1;
+            return a.declarationOrder - b.declarationOrder;
+          });
+        orderedPads.forEach(({ pad }, index) => {
           pad.scratch('_boundaryOrder', index);
           const width = pad.outerWidth();
           pad.position({
@@ -1051,8 +1064,16 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           : null;
         const sourceClearance = padClearance(edge.source()) || edge.scratch('_sourceStubClearance') || clearance;
         const targetClearance = padClearance(edge.target()) || edge.scratch('_targetStubClearance') || clearance;
-        const sourceStubX = source.x + sourceClearance;
-        const targetStubX = target.x - targetClearance;
+        let sourceStubX = source.x + sourceClearance;
+        let targetStubX = target.x - targetClearance;
+        // Fixed endpoint clearances can cross when two nodes or a node and a
+        // boundary pad are close together, creating a confusing backward jog.
+        // Compress both stubs into the available forward gap instead.
+        if (target.x > source.x && sourceStubX > targetStubX) {
+          const compactClearance = Math.max(6, (target.x - source.x) / 3);
+          sourceStubX = source.x + Math.min(sourceClearance, compactClearance);
+          targetStubX = target.x - Math.min(targetClearance, compactClearance);
+        }
         const midpointY = (source.y + target.y) / 2;
         const midpointX = (source.x + target.x) / 2;
         const laneCandidates = [...new Set([
@@ -1530,7 +1551,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const sourceBin = directChildWithin(source, parent);
       const targetBin = directChildWithin(target, parent);
       if (sourceBin.same(targetBin) || !sourceBin.isParent() || !targetBin.isParent()) return;
-      siblingBinPairs.set(`${sourceBin.id()}\u0000${targetBin.id()}`, { sourceBin, targetBin });
+      siblingBinPairs.set(`${sourceBin.id()}\u0000${targetBin.id()}`, { parent, sourceBin, targetBin });
     });
     const shiftCompound = (bin, dx) => {
       // Compound positions are derived from their children. Moving both a
@@ -1541,16 +1562,45 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         node.position('x', node.position('x') + dx);
       });
     };
+    const shiftDownstreamSiblings = (parent, sourceBin, targetBin, dx) => {
+      const adjacency = new Map();
+      const childUnderParent = node => {
+        let child = node;
+        while (child.parent().length && !child.parent().same(parent)) child = child.parent();
+        return child.parent().length && child.parent().same(parent) ? child : null;
+      };
+      layoutEdges.forEach(edge => {
+        const source = childUnderParent(cy.getElementById(edge.data('layoutSource')));
+        const target = childUnderParent(cy.getElementById(edge.data('layoutTarget')));
+        if (!source || !target || source.same(target)) return;
+        if (!adjacency.has(source.id())) adjacency.set(source.id(), new Set());
+        adjacency.get(source.id()).add(target.id());
+      });
+      const downstream = new Set([targetBin.id()]);
+      const pending = [targetBin.id()];
+      while (pending.length) {
+        for (const id of adjacency.get(pending.shift()) || []) {
+          if (id === sourceBin.id() || downstream.has(id)) continue;
+          downstream.add(id);
+          pending.push(id);
+        }
+      }
+      parent.children().filter(isGraphNode).forEach(node => {
+        if (!downstream.has(node.id())) return;
+        if (node.isParent()) shiftCompound(node, dx);
+        else node.position('x', node.position('x') + dx);
+      });
+    };
     const siblingBinGap = nodeCount > 100 ? 76 : 104;
     for (let pass = 0; pass < siblingBinPairs.size; pass++) {
       let moved = false;
-      siblingBinPairs.forEach(({ sourceBin, targetBin }, key) => {
+      siblingBinPairs.forEach(({ parent, sourceBin, targetBin }) => {
         if (siblingBinPairs.has(`${targetBin.id()}\u0000${sourceBin.id()}`)) return;
         const sourceBox = sourceBin.boundingBox({ includeLabels: false });
         const targetBox = targetBin.boundingBox({ includeLabels: false });
         const dx = sourceBox.x2 + siblingBinGap - targetBox.x1;
         if (dx <= 0) return;
-        shiftCompound(targetBin, dx);
+        shiftDownstreamSiblings(parent, sourceBin, targetBin, dx);
         moved = true;
       });
       if (!moved) break;
