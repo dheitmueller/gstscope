@@ -30,6 +30,8 @@ Warnings identify the first places to inspect and compare with the previous
 accepted baseline:
 
 - excessive route turns or detours;
+- bin-pad connectors that bend despite unobstructed room to align the boundary
+  pad with its visible internal peer pad;
 - very long links or excessive gaps between connected objects or containers;
 - long route segments shared by unrelated links;
 - link labels overlapping nodes;

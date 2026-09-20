@@ -111,6 +111,72 @@ const samples = [
       ['audioresample0','src','autoaudiosink0','sink','audio/x-raw'], ['uridecodebin0','video_0','videoconvert0','sink','video/x-raw'],
       ['videoconvert0','src','videoscale0','sink','video/x-raw'], ['videoscale0','src','autovideosink0','sink','video/x-raw']
     ]
+  },
+  {
+    file: 'playback-bins.dot', name: 'playback-bins', elements: [],
+    bins: [
+      {
+        id: 'decode_bin', name: 'decode', sinks: [], sources: ['audio_src', 'video_src'],
+        elements: [
+          ['filesrc0','GstFileSrc',[],['src']], ['typefind0','GstTypeFind',['sink'],['src']],
+          ['decodebin0','GstDecodeBin',['sink'],['audio_0','video_0']]
+        ],
+        edges: [['filesrc0','src','typefind0','sink','ANY'], ['typefind0','src','decodebin0','sink','ANY']],
+        egress: [['decodebin0','audio_0','audio_src','audio/x-raw'], ['decodebin0','video_0','video_src','video/x-raw']]
+      },
+      {
+        id: 'audio_output_bin', name: 'audio-output', sinks: ['sink'], sources: [],
+        elements: [
+          ['aqueue0','GstQueue',['sink'],['src']], ['audioconvert0','GstAudioConvert',['sink'],['src']],
+          ['audioresample0','GstAudioResample',['sink'],['src']], ['autoaudiosink0','GstAutoAudioSink',['sink'],[]]
+        ],
+        ingress: [['sink','aqueue0','sink','audio/x-raw']],
+        edges: chain(['aqueue0','audioconvert0','audioresample0','autoaudiosink0'], ['audio/x-raw','audio/x-raw','audio/x-raw'])
+      },
+      {
+        id: 'video_output_bin', name: 'video-output', sinks: ['sink'], sources: [],
+        elements: [
+          ['vqueue0','GstQueue',['sink'],['src']], ['videoconvert0','GstVideoConvert',['sink'],['src']],
+          ['videoscale0','GstVideoScale',['sink'],['src']], ['autovideosink0','GstAutoVideoSink',['sink'],[]]
+        ],
+        ingress: [['sink','vqueue0','sink','video/x-raw']],
+        edges: chain(['vqueue0','videoconvert0','videoscale0','autovideosink0'], ['video/x-raw','video/x-raw','video/x-raw'])
+      }
+    ],
+    edges: [
+      ['decode_bin','audio_src','audio_output_bin','sink','audio/x-raw'],
+      ['decode_bin','video_src','video_output_bin','sink','video/x-raw']
+    ]
+  },
+  {
+    file: 'capture-record-bins.dot', name: 'capture-record-bins', elements: [
+      ['matroskamux0','GstMatroskaMux',['video_0','audio_0'],['src']], ['filesink0','GstFileSink',['sink'],[]]
+    ],
+    bins: [
+      {
+        id: 'video_capture_bin', name: 'video-capture', sinks: [], sources: ['src'],
+        elements: [
+          ['videotestsrc0','GstVideoTestSrc',[],['src']], ['videoconvert0','GstVideoConvert',['sink'],['src']],
+          ['x264enc0','GstX264Enc',['sink'],['src']], ['h264parse0','GstH264Parse',['sink'],['src']]
+        ],
+        edges: chain(['videotestsrc0','videoconvert0','x264enc0','h264parse0'], ['video/x-raw','video/x-raw','video/x-h264']),
+        egress: [['h264parse0','src','src','video/x-h264']]
+      },
+      {
+        id: 'audio_capture_bin', name: 'audio-capture', sinks: [], sources: ['src'],
+        elements: [
+          ['audiotestsrc0','GstAudioTestSrc',[],['src']], ['audioconvert0','GstAudioConvert',['sink'],['src']],
+          ['voaacenc0','GstVoAacEnc',['sink'],['src']], ['aacparse0','GstAacParse',['sink'],['src']]
+        ],
+        edges: chain(['audiotestsrc0','audioconvert0','voaacenc0','aacparse0'], ['audio/x-raw','audio/x-raw','audio/mpeg']),
+        egress: [['aacparse0','src','src','audio/mpeg']]
+      }
+    ],
+    edges: [
+      ['video_capture_bin','src','matroskamux0','video_0','video/x-h264'],
+      ['audio_capture_bin','src','matroskamux0','audio_0','audio/mpeg'],
+      ['matroskamux0','src','filesink0','sink','video/x-matroska']
+    ]
   }
 ];
 
@@ -122,6 +188,73 @@ function nodeId(element, pad) {
   return `${element}_${pad}`;
 }
 
+function renderElement([id, factory, sinks, sources], index, indent = '  ') {
+  const child = `${indent}  `;
+  const grandchild = `${child}  `;
+  const out = [
+    `${indent}subgraph cluster_${id}_${index} {`, `${child}label="${factory}\\n${id}\\n[>]";`,
+    `${child}style="filled,rounded";`, `${child}color=black;`, `${child}fillcolor="#ffffff";`
+  ];
+  if (sinks.length) {
+    out.push(`${child}subgraph cluster_${id}_sink {`, `${grandchild}label="";`, `${grandchild}style="invis";`);
+    sinks.forEach(pad => out.push(`${grandchild}${nodeId(id, pad)} [color=black, fillcolor="#aaaaff", label="${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`));
+    out.push(`${child}}`);
+  }
+  if (sources.length) {
+    out.push(`${child}subgraph cluster_${id}_src {`, `${grandchild}label="";`, `${grandchild}style="invis";`);
+    sources.forEach(pad => out.push(`${grandchild}${nodeId(id, pad)} [color=black, fillcolor="#ffaaaa", label="${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`));
+    out.push(`${child}}`);
+  }
+  if (sinks.length && sources.length) out.push(`${child}${nodeId(id, sinks[0])} -> ${nodeId(id, sources[0])} [style="invis"];`);
+  out.push(`${indent}}`);
+  return out;
+}
+
+function proxyId(binId, direction, pad) {
+  return `_${binId}_${direction}_proxy_${pad}`;
+}
+
+function renderBin(bin, index) {
+  const indent = '  ';
+  const child = '    ';
+  const grandchild = '      ';
+  const out = [
+    `${indent}subgraph cluster_${bin.id}_${index} {`, `${child}label="GstBin\\n${bin.name}\\n[>]";`,
+    `${child}style="filled,rounded";`, `${child}color=black;`, `${child}fillcolor="#eef7f8";`
+  ];
+  if (bin.sinks.length) {
+    out.push(`${child}subgraph cluster_${bin.id}_sink {`, `${grandchild}label="";`, `${grandchild}style="invis";`);
+    bin.sinks.forEach(pad => {
+      out.push(`${grandchild}${proxyId(bin.id, 'sink', pad)} [color=black, fillcolor="#ddddff", label="proxypad-${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`);
+      out.push(`${grandchild}${nodeId(bin.id, pad)} [color=black, fillcolor="#ddddff", label="${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`);
+      out.push(`${grandchild}${nodeId(bin.id, pad)} -> ${proxyId(bin.id, 'sink', pad)} [style=dashed, minlen=0];`);
+    });
+    out.push(`${child}}`);
+  }
+  if (bin.sources.length) {
+    out.push(`${child}subgraph cluster_${bin.id}_src {`, `${grandchild}label="";`, `${grandchild}style="invis";`);
+    bin.sources.forEach(pad => {
+      out.push(`${grandchild}${proxyId(bin.id, 'src', pad)} [color=black, fillcolor="#ffdddd", label="proxypad-${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`);
+      out.push(`${grandchild}${nodeId(bin.id, pad)} [color=black, fillcolor="#ffdddd", label="${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`);
+      out.push(`${grandchild}${proxyId(bin.id, 'src', pad)} -> ${nodeId(bin.id, pad)} [style=dashed, minlen=0];`);
+    });
+    out.push(`${child}}`);
+  }
+  if (bin.sinks.length && bin.sources.length) out.push(`${child}${nodeId(bin.id, bin.sinks[0])} -> ${nodeId(bin.id, bin.sources[0])} [style="invis"];`);
+  bin.elements.forEach((element, childIndex) => out.push(...renderElement(element, `${index}_${childIndex}`, child)));
+  for (const [source, sourcePad, target, targetPad, caps] of bin.edges || []) {
+    out.push(`${child}${nodeId(source, sourcePad)} -> ${nodeId(target, targetPad)} [label="${caps || 'ANY'}"];`);
+  }
+  for (const [binPad, target, targetPad, caps] of bin.ingress || []) {
+    out.push(`${child}${proxyId(bin.id, 'sink', binPad)} -> ${nodeId(target, targetPad)} [label="${caps || 'ANY'}"];`);
+  }
+  for (const [source, sourcePad, binPad, caps] of bin.egress || []) {
+    out.push(`${child}${nodeId(source, sourcePad)} -> ${proxyId(bin.id, 'src', binPad)} [label="${caps || 'ANY'}"];`);
+  }
+  out.push(`${indent}}`);
+  return out;
+}
+
 function render(sample) {
   const out = [
     'digraph pipeline {', '  rankdir=LR;', '  fontname="sans";', '  fontsize="10";', '  labelloc=t;',
@@ -129,21 +262,8 @@ function render(sample) {
     '  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];',
     '  edge [labelfontsize="6", fontsize="9", fontname="monospace"];'
   ];
-  sample.elements.forEach(([id, factory, sinks, sources], index) => {
-    out.push(`  subgraph cluster_${id}_${index} {`, `    label="${factory}\\n${id}\\n[>]";`, '    style="filled,rounded";', '    color=black;', '    fillcolor="#ffffff";');
-    if (sinks.length) {
-      out.push(`    subgraph cluster_${id}_sink {`, '      label="";', '      style="invis";');
-      sinks.forEach(pad => out.push(`      ${nodeId(id, pad)} [color=black, fillcolor="#aaaaff", label="${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`));
-      out.push('    }');
-    }
-    if (sources.length) {
-      out.push(`    subgraph cluster_${id}_src {`, '      label="";', '      style="invis";');
-      sources.forEach(pad => out.push(`      ${nodeId(id, pad)} [color=black, fillcolor="#ffaaaa", label="${pad}\\n[>][bfb]", height="0.2", style="filled,solid"];`));
-      out.push('    }');
-    }
-    if (sinks.length && sources.length) out.push(`    ${nodeId(id, sinks[0])} -> ${nodeId(id, sources[0])} [style="invis"];`);
-    out.push('  }');
-  });
+  sample.elements.forEach((element, index) => out.push(...renderElement(element, index)));
+  (sample.bins || []).forEach((bin, index) => out.push(...renderBin(bin, index)));
   sample.edges.forEach(([source, sourcePad, target, targetPad, caps]) => {
     out.push(`  ${nodeId(source, sourcePad)} -> ${nodeId(target, targetPad)} [label="${caps || 'ANY'}"];`);
   });
@@ -152,5 +272,7 @@ function render(sample) {
 }
 
 await mkdir(output, { recursive: true });
-await Promise.all(samples.map(sample => writeFile(resolve(output, sample.file), render(sample))));
+const rendered = new Map(samples.map(sample => [sample.file.replace(/\.dot$/, ''), render(sample)]));
+await Promise.all(samples.map(sample => writeFile(resolve(output, sample.file), rendered.get(sample.file.replace(/\.dot$/, '')))));
+await writeFile(resolve('src/generated-samples.js'), `// Generated by scripts/generate-samples.mjs; do not edit by hand.\nexport const GENERATED_SAMPLE_DOTS = ${JSON.stringify(Object.fromEntries(rendered), null, 2)};\n`);
 console.log(`Generated ${samples.length} attributed GStreamer DOT samples`);

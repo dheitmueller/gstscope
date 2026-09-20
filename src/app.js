@@ -1,6 +1,7 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js';
 import { auditLayout } from './layout-quality.js';
 import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
+import { GENERATED_SAMPLE_DOTS } from './generated-samples.js';
 import { SAMPLE_CATALOG } from './sample-catalog.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
@@ -43,7 +44,6 @@ import { SAMPLE_CATALOG } from './sample-catalog.js';
   };
   let startupTimer = null;
   let loadSequence = 0;
-  let activeFetchController = null;
   const query = new URLSearchParams(location.search);
   const requestedPreset = ['architectural', 'normal', 'debug'].includes(query.get('preset')) ? query.get('preset') : 'architectural';
 
@@ -832,21 +832,42 @@ import { SAMPLE_CATALOG } from './sample-catalog.js';
   function placePadBadges() {
     const cy = state.cy;
     if (!cy) return;
-    const terminalTargetY = pad => {
-      let currentPad = pad;
-      const seen = new Set();
-      while (currentPad?.length && !seen.has(currentPad.id())) {
-        seen.add(currentPad.id());
-        const target = cy.getElementById(currentPad.data('targetOwnerId'));
-        if (!target.length) return null;
-        if (!target.isParent()) return target.position('y');
-        const nestedPad = cy.getElementById(`pad:${currentPad.data('targetPadId')}`);
-        if (!nestedPad.length || !nestedPad.data('boundary') || nestedPad.data('ownerId') !== target.id()) {
-          return target.position('y');
+    const terminalTargetY = (pad, seen = new Set()) => {
+      if (!pad?.length || seen.has(pad.id())) return null;
+      seen.add(pad.id());
+
+      // Follow the segment that is actually drawn from this boundary pad.
+      // Its peer is the visible representative of any queues or redundant
+      // tees contracted out of the semantic view, whereas targetOwnerId can
+      // still name the hidden element directly. Aligning with that visible
+      // peer keeps the connector horizontal whenever the pad has room.
+      const connector = pad.connectedEdges().filter(edge => edge.data('ghostConnector'))[0];
+      if (connector?.length) {
+        const padIsSource = connector.source().same(pad);
+        const peer = padIsSource ? connector.target() : connector.source();
+        if (peer.data('kind') === 'pad' && peer.data('boundary')) {
+          const nestedY = terminalTargetY(peer, seen);
+          if (Number.isFinite(nestedY)) return nestedY;
         }
-        currentPad = nestedPad;
+        const peerPadId = connector.data(padIsSource ? 'targetPadId' : 'sourcePadId');
+        const peerPad = peerPadId ? cy.getElementById(`pad:${peerPadId}`) : null;
+        if (peerPad?.length && peerPad.data('ownerId') === peer.id()) return peerPad.position('y');
+        if (peer.length) return peer.position('y');
       }
-      return null;
+
+      const target = cy.getElementById(pad.data('targetOwnerId'));
+      if (!target.length) return null;
+      const nestedPad = cy.getElementById(`pad:${pad.data('targetPadId')}`);
+      if (!target.isParent()) {
+        return nestedPad.length && nestedPad.data('ownerId') === target.id()
+          ? nestedPad.position('y')
+          : target.position('y');
+      }
+      if (nestedPad.length && nestedPad.data('boundary') && nestedPad.data('ownerId') === target.id()) {
+        const nestedY = terminalTargetY(nestedPad, seen);
+        if (Number.isFinite(nestedY)) return nestedY;
+      }
+      return target.position('y');
     };
     const groups = new Map();
     cy.nodes().filter(node => node.data('kind') === 'pad').forEach(pad => {
@@ -2228,31 +2249,12 @@ import { SAMPLE_CATALOG } from './sample-catalog.js';
   async function loadSample(id) {
     const sample = SAMPLE_CATALOG.find(entry => entry.id === id) || SAMPLE_CATALOG[0];
     const loadId = ++loadSequence;
-    activeFetchController?.abort();
     showLoading(loadId);
     $('sampleSelect').value = sample.id;
     if (sample.generated) return loadText(makeStressDot(), 'synthetic-stress-280.dot', sample, loadId);
-    let lastError;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const controller = new AbortController();
-      activeFetchController = controller;
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      try {
-        const response = await fetch(`samples/${sample.file}`, {
-          signal: controller.signal,
-          cache: attempt ? 'reload' : 'default'
-        });
-        if (!response.ok) throw new Error(`Sample returned HTTP ${response.status}`);
-        await loadText(await response.text(), sample.file, sample, loadId);
-        return;
-      } catch (error) {
-        if (loadId !== loadSequence) return;
-        lastError = error;
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-    throw new Error(lastError?.name === 'AbortError' ? 'The sample request timed out.' : lastError?.message || 'The sample is unavailable.');
+    const dot = GENERATED_SAMPLE_DOTS[sample.id];
+    if (!dot) throw new Error(`The bundled ${sample.label} sample is unavailable.`);
+    return loadText(dot, sample.file, sample, loadId);
   }
 
   function makeStressDot() {
@@ -2287,7 +2289,6 @@ import { SAMPLE_CATALOG } from './sample-catalog.js';
   ui.fileInput.addEventListener('change', async () => {
     const file = ui.fileInput.files[0];
     if (!file) return;
-    activeFetchController?.abort();
     $('sampleSelect').value = 'local';
     loadText(await file.text(), file.name);
   });
@@ -2347,7 +2348,6 @@ import { SAMPLE_CATALOG } from './sample-catalog.js';
     e.preventDefault(); dragDepth = 0; ui.dropOverlay.classList.remove('show');
     const file = [...e.dataTransfer.files].find(f => f.name.endsWith('.dot'));
     if (!file) return;
-    activeFetchController?.abort();
     $('sampleSelect').value = 'local';
     loadText(await file.text(), file.name);
   });

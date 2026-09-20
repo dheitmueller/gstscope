@@ -1,5 +1,19 @@
 export const SAMPLE_CATALOG = [
   {
+    id: 'playback-bins', label: 'Playback with nested bins', file: 'playback-bins.dot',
+    author: 'GstScope contributors; based on GStreamer playback and bin documentation',
+    source: 'https://gstreamer.freedesktop.org/documentation/application-development/basics/bins.html',
+    license: 'Generated fixture — GPL-2.0-or-later',
+    description: 'A bin-rich playback topology with separate decode, audio-output, and video-output containers.'
+  },
+  {
+    id: 'capture-record-bins', label: 'Capture and record bins', file: 'capture-record-bins.dot',
+    author: 'GstScope contributors; based on GStreamer Project examples',
+    source: 'https://gstreamer.freedesktop.org/documentation/tools/gst-launch.html',
+    license: 'Generated fixture — GPL-2.0-or-later',
+    description: 'Independent audio and video capture bins feeding a shared Matroska recording path.'
+  },
+  {
     id: 'video-test', label: 'Video test pattern', file: 'video-test.dot',
     author: 'GstScope contributors; based on the GStreamer Project example',
     source: 'https://gstreamer.freedesktop.org/documentation/tools/gst-launch.html',

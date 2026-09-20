@@ -1,10 +1,12 @@
 import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { GENERATED_SAMPLE_DOTS } from '../src/generated-samples.js';
 import { SAMPLE_CATALOG } from '../src/sample-catalog.js';
 
 const required = [
   'index.html',
   'app.js',
+  'generated-samples.js',
   'sample-catalog.js',
   'geometry.js',
   'styles.css',
@@ -15,8 +17,8 @@ const required = [
   '.nojekyll'
 ];
 
-if (SAMPLE_CATALOG.length !== 10) {
-  throw new Error(`Expected exactly 10 bundled samples, found ${SAMPLE_CATALOG.length}`);
+if (SAMPLE_CATALOG.length !== 12) {
+  throw new Error(`Expected exactly 12 bundled samples, found ${SAMPLE_CATALOG.length}`);
 }
 
 for (const sample of SAMPLE_CATALOG) {
@@ -26,7 +28,10 @@ for (const sample of SAMPLE_CATALOG) {
   if (!/GPL-2\.0-or-later/.test(sample.license)) {
     throw new Error(`Sample ${sample.id} is not marked GPL-2.0-or-later compatible`);
   }
-  if (!sample.generated) required.push(`samples/${sample.file}`);
+  if (!sample.generated) {
+    required.push(`samples/${sample.file}`);
+    if (!GENERATED_SAMPLE_DOTS[sample.id]) throw new Error(`Sample ${sample.id} is missing from the embedded fixture bundle`);
+  }
 }
 
 await Promise.all(required.map(file => access(resolve('dist', file))));

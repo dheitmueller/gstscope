@@ -11,7 +11,9 @@ These instructions apply to every change in this repository.
 - Linked and unlinked pads are rendered inside their owning node. The unlinked
   pads control hides only unlinked pads; it must not hide linked pads.
 - Bin boundary pads sit just inside the bin edge and connect to their represented
-  internal pads. Internal routes must not leave and re-enter their container.
+  internal pads. Align a boundary pad with the actual visible peer pad whenever
+  badges do not collide, including when hidden queues or tees are contracted from
+  the route. Internal routes must not leave and re-enter their container.
 - Keep declaration order as the deterministic ordering fallback. Do not infer
   order from trailing numbers in element or pad names.
 - Expanding and collapsing a bin must preserve sibling order and make every
@@ -30,6 +32,10 @@ an Expand All state when evaluating this fixture.
 repository, commit it, publish it, or derive a bundled sample from its contents.
 It remains the temporary canonical fixture only until the project owner selects
 a redistributable sample from the bundled catalog.
+
+Preserve third-party sample files byte-for-byte. Do not normalize, simplify, or
+annotate their DOT contents; keep license, author, and source attribution in the
+sample catalog. Generated GstScope fixtures must be clearly identified as such.
 
 Use the local build in the Codex web panel while iterating. Do not take control of
 the user's browser. Verify GitHub Pages only once after local checks pass and the
