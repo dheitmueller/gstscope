@@ -915,7 +915,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const edgeObstacles = edge => {
       const sourceAncestors = ancestorIds(edge.source());
       const targetAncestors = ancestorIds(edge.target());
-      const allowedCompounds = new Set([...sourceAncestors].filter(id => targetAncestors.has(id)));
+      // A route necessarily travels through the containers that own either
+      // endpoint. Treating only shared ancestors as passable makes links
+      // between sibling bins regard both endpoint bins as obstacles, forcing
+      // a long escape outside the bins before re-entering at the target.
+      const allowedCompounds = new Set([...sourceAncestors, ...targetAncestors]);
       const sourcePosition = edge.source().position();
       const targetPosition = edge.target().position();
       const corridor = {
