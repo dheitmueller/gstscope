@@ -1,6 +1,6 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js';
 import { auditLayout } from './layout-quality.js';
-import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
+import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -1718,6 +1718,64 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOf
     }));
     placePadBadges();
 
+    const translateGraphNode = (node, dx = 0, dy = 0) => {
+      // Compound positions are derived from their children. Moving both a
+      // nested parent and its descendants applies the translation twice and
+      // stretches the enclosing bin. Shift leaves only and let every compound
+      // ancestor recompute its bounds around them.
+      const movable = node.isParent()
+        ? node.descendants().filter(child => !child.isParent() && child.data('kind') !== 'pad' && child.data('kind') !== 'edge-label')
+        : node;
+      movable.forEach(child => child.position({ x: child.position('x') + dx, y: child.position('y') + dy }));
+    };
+    const directChildWithin = (node, parent) => {
+      if (!node?.length || node.same(parent)) return null;
+      let child = node;
+      while (child.parent().length && !child.parent().same(parent)) child = child.parent();
+      return child.parent().length && child.parent().same(parent) ? child : null;
+    };
+
+    // The global leaf ranking establishes end-to-end flow, but external links
+    // must not stretch a bin's own contents across ranks belonging to the rest
+    // of the pipeline. Re-layout each container's immediate children as whole
+    // rectangles, deepest first. The root pass then closes gaps using the
+    // compacted bin bounds rather than the original, inflated leaf spans.
+    graphNodes.filter(node => node.isParent())
+      .sort((a, b) => b.ancestors().length - a.ancestors().length)
+      .forEach(parent => {
+        const children = [...parent.children().filter(isGraphNode)]
+          .sort((a, b) => (a.data('declarationOrder') ?? 0) - (b.data('declarationOrder') ?? 0));
+        if (children.length < 2) return;
+        const childIds = new Set(children.map(child => child.id()));
+        const local = new dagre.graphlib.Graph({ multigraph: true })
+          .setGraph({ rankdir: 'LR', ranksep: nodeCount > 100 ? 76 : 104, nodesep: nodeCount > 100 ? 44 : 58, edgesep: 24, marginx: 0, marginy: 0 })
+          .setDefaultEdgeLabel(() => ({}));
+        children.forEach(child => {
+          const box = child.boundingBox({ includeLabels: false });
+          local.setNode(child.id(), { width: Math.max(box.w, 40), height: Math.max(box.h, 30) });
+        });
+        const localEdges = new Set();
+        layoutEdges.forEach((edge, index) => {
+          const source = directChildWithin(cy.getElementById(edge.data('layoutSource')), parent);
+          const target = directChildWithin(cy.getElementById(edge.data('layoutTarget')), parent);
+          if (!source || !target || source.same(target) || !childIds.has(source.id()) || !childIds.has(target.id())) return;
+          const key = `${source.id()}\u0000${target.id()}`;
+          if (localEdges.has(key)) return;
+          localEdges.add(key);
+          local.setEdge(source.id(), target.id(), {}, `${parent.id()}:${index}`);
+        });
+        dagre.layout(local);
+        const currentBoxes = children.map(child => ({ id: child.id(), ...child.boundingBox({ includeLabels: false }) }));
+        const localBoxes = children.map(child => {
+          const position = local.node(child.id());
+          return { id: child.id(), x1: position.x - position.width / 2, x2: position.x + position.width / 2, y1: position.y - position.height / 2, y2: position.y + position.height / 2 };
+        });
+        centeredLayoutTranslations(currentBoxes, localBoxes).forEach(({ id, dx, dy }) => {
+          translateGraphNode(cy.getElementById(id), dx, dy);
+        });
+      });
+    placePadBadges();
+
     // Dagre ranks leaves, so two connected sibling bins can still overlap
     // once Cytoscape wraps those leaves in padded compound rectangles. Build
     // the corresponding bin-to-bin relationships and move each downstream
@@ -1729,7 +1787,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOf
       while (parent.length && !targetAncestors.has(parent.id())) parent = parent.parent();
       return parent;
     };
-    const directChildWithin = (node, parent) => {
+    const siblingChildWithin = (node, parent) => {
       let child = node;
       while (child.parent().length && !child.parent().same(parent)) child = child.parent();
       return child;
@@ -1742,8 +1800,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOf
     const addSiblingPair = (source, target, logicalId = '', sourcePadId = '', targetPadId = '') => {
       if (!source.length || !target.length) return;
       const parent = nearestSharedParent(source, target);
-      const sourceBin = parent.length ? directChildWithin(source, parent) : topLevelNode(source);
-      const targetBin = parent.length ? directChildWithin(target, parent) : topLevelNode(target);
+      const sourceBin = parent.length ? siblingChildWithin(source, parent) : topLevelNode(source);
+      const targetBin = parent.length ? siblingChildWithin(target, parent) : topLevelNode(target);
       if (sourceBin.same(targetBin) || !sourceBin.isParent() || !targetBin.isParent()) return;
       const key = `${sourceBin.id()}\u0000${targetBin.id()}`;
       const pair = siblingBinPairs.get(key) || {
@@ -1772,16 +1830,6 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOf
         '', link.sourcePad, link.sinkPad
       );
     });
-    const translateGraphNode = (node, dx = 0, dy = 0) => {
-      // Compound positions are derived from their children. Moving both a
-      // nested parent and its descendants applies the translation twice and
-      // stretches the enclosing bin. Shift leaves only and let every compound
-      // ancestor recompute its bounds around them.
-      const movable = node.isParent()
-        ? node.descendants().filter(child => !child.isParent() && child.data('kind') !== 'pad' && child.data('kind') !== 'edge-label')
-        : node;
-      movable.forEach(child => child.position({ x: child.position('x') + dx, y: child.position('y') + dy }));
-    };
     const shiftDownstreamSiblings = (parent, sourceBin, targetBin, dx) => {
       const adjacency = new Map();
       const childUnderParent = node => {
@@ -1852,8 +1900,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOf
         || flowNodes.filter(node => node.data('kind') === 'pad' && node.data('ownerId') === pair.targetBin.id())[0];
       if (!sourcePad?.length || !targetPad?.length) return;
       const dy = targetPad.position('y') - sourcePad.position('y');
-      if (Math.abs(dy) < 2) return;
       const sourceBox = pair.sourceBin.boundingBox({ includeLabels: false });
+      const targetBox = pair.targetBin.boundingBox({ includeLabels: false });
+      const dx = targetBox.x1 - siblingBinGap - sourceBox.x2;
+      if (Math.abs(dy) < 2 && Math.abs(dx) < 2) return;
       const sourceCenterY = (sourceBox.y1 + sourceBox.y2) / 2;
       // Insert the required vertical space instead of abandoning alignment
       // when another source-side sibling occupies the destination row.
@@ -1867,7 +1917,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOf
         const onMovedSide = dy > 0 ? (box.y1 + box.y2) / 2 > sourceCenterY : (box.y1 + box.y2) / 2 < sourceCenterY;
         if (overlapsX && onMovedSide) translateGraphNode(node, 0, dy);
       });
-      translateGraphNode(pair.sourceBin, 0, dy);
+      // A source-only bin should sit immediately before the one container it
+      // feeds. Dagre may otherwise assign different ranks to parallel inputs
+      // because of unrelated downstream depth, leaving a multi-screen stub.
+      translateGraphNode(pair.sourceBin, dx, dy);
     });
     placePadBadges();
 

@@ -116,3 +116,23 @@ export function topRightBadgeTarget(items, point, hitSize = 30) {
     .filter(item => point.x >= item.x2 - hitSize && point.x <= item.x2 && point.y >= item.y1 && point.y <= item.y1 + hitSize)
     .sort((a, b) => (a.x2 - a.x1) * (a.y2 - a.y1) - (b.x2 - b.x1) * (b.y2 - b.y1))[0]?.id || null;
 }
+
+export function centeredLayoutTranslations(currentBoxes, layoutBoxes) {
+  if (!currentBoxes.length || !layoutBoxes.length) return [];
+  const center = boxes => ({
+    x: (Math.min(...boxes.map(box => box.x1)) + Math.max(...boxes.map(box => box.x2))) / 2,
+    y: (Math.min(...boxes.map(box => box.y1)) + Math.max(...boxes.map(box => box.y2))) / 2
+  });
+  const currentCenter = center(currentBoxes);
+  const layoutCenter = center(layoutBoxes);
+  const currentById = new Map(currentBoxes.map(box => [box.id, box]));
+  return layoutBoxes.flatMap(box => {
+    const current = currentById.get(box.id);
+    if (!current) return [];
+    return [{
+      id: box.id,
+      dx: currentCenter.x + (box.x1 + box.x2) / 2 - layoutCenter.x - (current.x1 + current.x2) / 2,
+      dy: currentCenter.y + (box.y1 + box.y2) / 2 - layoutCenter.y - (current.y1 + current.y2) / 2
+    }];
+  });
+}

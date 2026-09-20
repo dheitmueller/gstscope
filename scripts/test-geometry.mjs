@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from '../src/geometry.js';
-import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
+import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -160,6 +160,22 @@ assert.deepEqual(
     { id: 'separate', order: 3, x1: 400, x2: 500, y1: 0, y2: 50 }
   ], 40, 10),
   [{ id: 'later', offset: 160 }]
+);
+assert.deepEqual(
+  centeredLayoutTranslations(
+    [
+      { id: 'source', x1: 0, x2: 100, y1: 0, y2: 50 },
+      { id: 'target', x1: 1900, x2: 2000, y1: 0, y2: 50 }
+    ],
+    [
+      { id: 'source', x1: 0, x2: 100, y1: 0, y2: 50 },
+      { id: 'target', x1: 200, x2: 300, y1: 0, y2: 50 }
+    ]
+  ),
+  [
+    { id: 'source', dx: 850, dy: 0 },
+    { id: 'target', dx: -850, dy: 0 }
+  ]
 );
 assert.equal(
   topRightBadgeTarget([
