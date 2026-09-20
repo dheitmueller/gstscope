@@ -1,5 +1,5 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js';
-import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
+import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -786,7 +786,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           const interiorGap = 32;
           const compoundPadding = 28;
           const targetBoxes = pads.map(pad => cy.getElementById(pad.data('targetOwnerId')))
-            .filter(target => target.length)
+            // Only the pad's target inside this bin can define its inner
+            // gutter. An external peer would stretch the compound across the
+            // entire inter-bin route.
+            .filter(target => target.length && target.ancestors().some(ancestor => ancestor.same(owner)))
             .map(target => target.boundingBox({ includeLabels: false }));
           const ownerChildren = owner.descendants().filter(isGraphNode);
           const childBox = ownerChildren.length ? ownerChildren.boundingBox({ includeLabels: false }) : owner.boundingBox({ includeLabels: false });
@@ -1358,6 +1361,61 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       });
     });
 
+    // Dagre independently ranks disconnected subgraphs. A small dangling
+    // branch inside a bin can therefore land thousands of pixels away from
+    // that bin's primary flow and make the compound appear mostly empty.
+    // Pack secondary components immediately below the largest component while
+    // preserving every component's internal geometry.
+    const guideAdjacency = new Map(leaves.map(node => [node.id(), new Set()]));
+    guide.edges().forEach(edge => {
+      guideAdjacency.get(edge.v)?.add(edge.w);
+      guideAdjacency.get(edge.w)?.add(edge.v);
+    });
+    const componentGap = nodeCount > 100 ? 54 : 72;
+    graphNodes.filter(node => node.isParent() && node.id() !== state.graph.pipeline)
+      .sort((a, b) => b.ancestors().length - a.ancestors().length)
+      .forEach(parent => {
+        const ids = new Set(parent.descendants().filter(node => leafIds.has(node.id())).map(node => node.id()));
+        if (ids.size < 2) return;
+        const components = [];
+        while (ids.size) {
+          const pending = [ids.values().next().value];
+          const members = [];
+          ids.delete(pending[0]);
+          while (pending.length) {
+            const id = pending.pop();
+            members.push(id);
+            for (const neighbor of guideAdjacency.get(id) || []) {
+              if (!ids.has(neighbor)) continue;
+              ids.delete(neighbor);
+              pending.push(neighbor);
+            }
+          }
+          const positions = members.map(id => guide.node(id)).filter(Boolean);
+          components.push({
+            members,
+            minX: Math.min(...positions.map(p => p.x - p.width / 2)),
+            maxX: Math.max(...positions.map(p => p.x + p.width / 2)),
+            minY: Math.min(...positions.map(p => p.y - p.height / 2)),
+            maxY: Math.max(...positions.map(p => p.y + p.height / 2))
+          });
+        }
+        if (components.length < 2) return;
+        components.sort((a, b) => b.members.length - a.members.length || (b.maxX - b.minX) - (a.maxX - a.minX));
+        const primary = components.shift();
+        let cursorY = primary.maxY + componentGap;
+        components.sort((a, b) => a.minY - b.minY).forEach(component => {
+          const dx = primary.minX - component.minX;
+          const dy = cursorY - component.minY;
+          component.members.forEach(id => {
+            const position = guide.node(id);
+            position.x += dx;
+            position.y += dy;
+          });
+          cursorY += component.maxY - component.minY + componentGap;
+        });
+      });
+
     const placements = [];
     const transitionGroups = new Map();
     const priorIds = previousVisible || new Set(leaves.map(node => node.id()));
@@ -1506,19 +1564,18 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       }));
     }
 
-    // Compound parents resize around their children after layout. Keep each
-    // expanded top-level bin in its own vertical lane so that resize cannot
-    // engulf or overlap unrelated root-level nodes.
+    // Compound parents resize around their children after layout. Separate
+    // top-level bins only when their final horizontal spans overlap. Bins in
+    // a directed left-to-right chain can safely retain Dagre's shared vertical
+    // band; stacking every bin forced short links into enormous vertical runs.
     const orderedLanes = [...lanes.values()].sort((a, b) => {
       if (a.id === '__root__') return -1;
       if (b.id === '__root__') return 1;
       return a.minY - b.minY;
     });
-    let laneTop = 44;
     const laneGap = nodeCount > 100 ? 96 : 140;
-    orderedLanes.forEach(lane => {
-      lane.offset = laneTop - lane.minY;
-      laneTop += lane.maxY - lane.minY + laneGap;
+    overlapAwareLaneOffsets(orderedLanes, laneGap).forEach(({ id, offset }) => {
+      lanes.get(id).offset = offset;
     });
     cy.batch(() => placements.forEach(({ node, position, laneId }) => {
       const lane = lanes.get(laneId);
@@ -1542,16 +1599,43 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       while (child.parent().length && !child.parent().same(parent)) child = child.parent();
       return child;
     };
-    layoutEdges.forEach(edge => {
-      const source = cy.getElementById(edge.data('layoutSource'));
-      const target = cy.getElementById(edge.data('layoutTarget'));
+    const topLevelNode = node => {
+      let top = node;
+      while (top.parent().length) top = top.parent();
+      return top;
+    };
+    const addSiblingPair = (source, target, logicalId = '', sourcePadId = '', targetPadId = '') => {
       if (!source.length || !target.length) return;
       const parent = nearestSharedParent(source, target);
-      if (!parent.length) return;
-      const sourceBin = directChildWithin(source, parent);
-      const targetBin = directChildWithin(target, parent);
+      const sourceBin = parent.length ? directChildWithin(source, parent) : topLevelNode(source);
+      const targetBin = parent.length ? directChildWithin(target, parent) : topLevelNode(target);
       if (sourceBin.same(targetBin) || !sourceBin.isParent() || !targetBin.isParent()) return;
-      siblingBinPairs.set(`${sourceBin.id()}\u0000${targetBin.id()}`, { parent, sourceBin, targetBin });
+      const key = `${sourceBin.id()}\u0000${targetBin.id()}`;
+      const pair = siblingBinPairs.get(key) || {
+        parent, sourceBin, targetBin,
+        logicalIds: new Set(), sourcePadIds: new Set(), targetPadIds: new Set()
+      };
+      if (logicalId) pair.logicalIds.add(logicalId);
+      if (sourcePadId) pair.sourcePadIds.add(sourcePadId);
+      if (targetPadId) pair.targetPadIds.add(targetPadId);
+      siblingBinPairs.set(key, pair);
+    };
+    layoutEdges.forEach(edge => {
+      addSiblingPair(
+        cy.getElementById(edge.data('layoutSource')),
+        cy.getElementById(edge.data('layoutTarget')),
+        edge.data('logicalEdgeId'), edge.data('sourcePadId'), edge.data('targetPadId')
+      );
+    });
+    // Expanded-bin boundary links can be represented solely by auxiliary pad
+    // connectors, which are intentionally absent from layoutEdges. Recover
+    // their real sibling relationship from the authoritative DOT link model.
+    state.graph.links.forEach(link => {
+      addSiblingPair(
+        cy.getElementById(link.sourceElement),
+        cy.getElementById(link.sinkElement),
+        '', link.sourcePad, link.sinkPad
+      );
     });
     const shiftCompound = (bin, dx) => {
       // Compound positions are derived from their children. Moving both a
@@ -1565,6 +1649,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const shiftDownstreamSiblings = (parent, sourceBin, targetBin, dx) => {
       const adjacency = new Map();
       const childUnderParent = node => {
+        if (!parent.length) return topLevelNode(node);
         let child = node;
         while (child.parent().length && !child.parent().same(parent)) child = child.parent();
         return child.parent().length && child.parent().same(parent) ? child : null;
@@ -1585,7 +1670,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           pending.push(id);
         }
       }
-      parent.children().filter(isGraphNode).forEach(node => {
+      const siblings = parent.length
+        ? parent.children().filter(isGraphNode)
+        : cy.nodes().filter(node => isGraphNode(node) && !node.parent().length);
+      siblings.forEach(node => {
         if (!downstream.has(node.id())) return;
         if (node.isParent()) shiftCompound(node, dx);
         else node.position('x', node.position('x') + dx);
@@ -1605,6 +1693,53 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       });
       if (!moved) break;
     }
+    placePadBadges();
+
+    // A self-contained source bin with one external output has an obvious
+    // visual anchor: the sink pad it feeds. Align those two boundary pads and
+    // move source-side siblings together when space must be inserted. This
+    // removes tall doglegs for one-output source components.
+    const incomingPairCount = new Map();
+    const outgoingPairs = new Map();
+    siblingBinPairs.forEach(pair => {
+      incomingPairCount.set(pair.targetBin.id(), (incomingPairCount.get(pair.targetBin.id()) || 0) + 1);
+      if (!outgoingPairs.has(pair.sourceBin.id())) outgoingPairs.set(pair.sourceBin.id(), []);
+      outgoingPairs.get(pair.sourceBin.id()).push(pair);
+    });
+    outgoingPairs.forEach((pairs, sourceId) => {
+      if (pairs.length !== 1 || incomingPairCount.get(sourceId)) return;
+      const pair = pairs[0];
+      const flowEdges = cy.edges().filter(edge => pair.logicalIds.has(edge.data('logicalEdgeId')));
+      const flowNodes = flowEdges.connectedNodes();
+      const sourcePad = cy.nodes().filter(node => node.data('kind') === 'pad' && node.data('ownerId') === pair.sourceBin.id() && pair.sourcePadIds.has(node.data('padId')))[0]
+        || flowNodes.filter(node => node.data('kind') === 'pad' && node.data('ownerId') === pair.sourceBin.id())[0];
+      const targetPad = cy.nodes().filter(node => node.data('kind') === 'pad' && node.data('ownerId') === pair.targetBin.id() && pair.targetPadIds.has(node.data('padId')))[0]
+        || flowNodes.filter(node => node.data('kind') === 'pad' && node.data('ownerId') === pair.targetBin.id())[0];
+      if (!sourcePad?.length || !targetPad?.length) return;
+      const dy = targetPad.position('y') - sourcePad.position('y');
+      if (Math.abs(dy) < 2) return;
+      const sourceBox = pair.sourceBin.boundingBox({ includeLabels: false });
+      const sourceCenterY = (sourceBox.y1 + sourceBox.y2) / 2;
+      const shiftVertically = (node, amount) => {
+        const movable = node.isParent()
+          ? node.descendants().filter(child => !child.isParent() && child.data('kind') !== 'pad' && child.data('kind') !== 'edge-label')
+          : node;
+        movable.forEach(child => child.position('y', child.position('y') + amount));
+      };
+      // Insert the required vertical space instead of abandoning alignment
+      // when another source-side sibling occupies the destination row.
+      const siblings = pair.parent.length
+        ? pair.parent.children().filter(isGraphNode)
+        : cy.nodes().filter(node => isGraphNode(node) && !node.parent().length);
+      siblings.forEach(node => {
+        if (node.same(pair.sourceBin) || node.same(pair.targetBin)) return;
+        const box = node.boundingBox({ includeLabels: false });
+        const overlapsX = sourceBox.x1 < box.x2 + 20 && sourceBox.x2 + 20 > box.x1;
+        const onMovedSide = dy > 0 ? (box.y1 + box.y2) / 2 > sourceCenterY : (box.y1 + box.y2) / 2 < sourceCenterY;
+        if (overlapsX && onMovedSide) shiftVertically(node, dy);
+      });
+      shiftVertically(pair.sourceBin, dy);
+    });
     placePadBadges();
     applyEdgeGeometry();
     if (fit) cy.fit(undefined, 44);

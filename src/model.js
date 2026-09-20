@@ -61,6 +61,37 @@ export function isolatedSiblingPlacements(items, gap = 62) {
   });
 }
 
+export function overlapAwareLaneOffsets(items, verticalGap = 96, horizontalGap = 32, top = 44) {
+  if (!items.length) return [];
+  const baseOffset = top - Math.min(...items.map(item => item.minY));
+  const placed = [];
+
+  [...items]
+    .sort((a, b) => a.minY - b.minY || a.minX - b.minX || a.id.localeCompare(b.id))
+    .forEach(item => {
+      const lane = { ...item, offset: baseOffset };
+      const overlapsX = other =>
+        lane.minX + lane.xOffset < other.maxX + other.xOffset + horizontalGap &&
+        lane.maxX + lane.xOffset + horizontalGap > other.minX + other.xOffset;
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const other of placed) {
+          if (!overlapsX(other)) continue;
+          const topY = lane.minY + lane.offset;
+          const otherBottom = other.maxY + other.offset;
+          if (topY < otherBottom + verticalGap && lane.maxY + lane.offset > other.minY + other.offset - verticalGap) {
+            lane.offset += otherBottom + verticalGap - topY;
+            moved = true;
+          }
+        }
+      }
+      placed.push(lane);
+    });
+
+  return placed.map(({ id, offset }) => ({ id, offset }));
+}
+
 export function topRightBadgeTarget(items, point, hitSize = 30) {
   return items
     .filter(item => point.x >= item.x2 - hitSize && point.x <= item.x2 && point.y >= item.y1 && point.y <= item.y1 + hitSize)
