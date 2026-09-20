@@ -1,6 +1,6 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js';
 import { auditLayout } from './layout-quality.js';
-import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
+import { isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -128,7 +128,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
       const sg = line.match(/^subgraph\s+("?[^\s{"}]+"?)\s*\{/);
       if (sg) {
         const id = sg[1].replace(/"/g, '');
-        const scope = { id, parent: stack.at(-1), children: [], label: '', nodes: [] };
+        const scope = { id, parent: stack.at(-1), children: [], label: '', nodes: [], declarationOrder: scopes.size };
         stack.at(-1).children.push(scope);
         scopes.set(id, scope);
         stack.push(scope);
@@ -186,7 +186,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
       const item = {
         id: scope.id, name, factory, kind: directSemanticChildren ? 'bin' : 'element', parent,
         state: bits.find(x => /^\[/.test(x)) || '', properties: props, pads: [],
-        depth: (items.get(parent)?.depth ?? 0) + 1, rawLabel: scope.label
+        depth: (items.get(parent)?.depth ?? 0) + 1, declarationOrder: scope.declarationOrder, rawLabel: scope.label
       };
       items.set(item.id, item);
       scopeToItem.set(scope, item);
@@ -291,6 +291,31 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
     const ownerNode = node => node.data('kind') === 'pad'
       ? cy.getElementById(node.data('ownerId'))
       : node;
+    const renderedEndpoint = (edge, side) => {
+      const node = side === 'source' ? edge.source() : edge.target();
+      const value = edge.data(`${side}Endpoint`);
+      const match = /^(-?[\d.]+)%\s+(-?[\d.]+)%$/.exec(value || '');
+      const xPercent = match ? Number(match[1]) : side === 'source' ? 50 : -50;
+      const yPercent = match ? Number(match[2]) : 0;
+      return {
+        x: node.position('x') + node.outerWidth() * xPercent / 100,
+        y: node.position('y') + node.outerHeight() * yPercent / 100
+      };
+    };
+    const renderedRoutePoints = edge => {
+      const source = renderedEndpoint(edge, 'source');
+      const target = renderedEndpoint(edge, 'target');
+      const weights = String(edge.data('segmentWeights') || '').split(/\s+/).map(Number).filter(Number.isFinite);
+      const distances = String(edge.data('segmentDistances') || '').split(/\s+/).map(Number).filter(Number.isFinite);
+      const dx = target.x - source.x, dy = target.y - source.y;
+      const length = Math.hypot(dx, dy);
+      if (length < 1 || weights.length !== distances.length) return [source, target];
+      const controls = weights.map((weight, index) => ({
+        x: source.x + weight * dx + distances[index] * -dy / length,
+        y: source.y + weight * dy + distances[index] * dx / length
+      }));
+      return [source, ...controls, target];
+    };
     const nodeRecord = node => ({
       id: node.id(),
       label: node.data('label') || node.id(),
@@ -313,7 +338,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
           targetOwner: targetOwner.id(),
           sourceParent: sourceOwner.parent().id() || '',
           targetParent: targetOwner.parent().id() || '',
-          points: edge.scratch('_routePoints') || [edge.source().position(), edge.target().position()]
+          points: renderedRoutePoints(edge),
+          routingDebug: edge.scratch('_routingDebug') || null
         };
       })
     };
@@ -505,7 +531,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
       const nodeHeight = padRows ? Math.max(baseHeight, 42 + padRows * 18) : baseHeight;
       const nodeLabelOffsetY = padRows ? -(nodeHeight / 2 - 13) : 0;
       return {
-        data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), collapsed, collapsible: item.kind === 'bin' && id !== g.pipeline, nodeHeight, nodeLabelOffsetY },
+        data: { id, parent, label: displayLabel(item, collapsed), subtitle: item.factory, kind: item.kind, typeClass: typeClass(item), declarationOrder: item.declarationOrder ?? 0, collapsed, collapsible: item.kind === 'bin' && id !== g.pipeline, nodeHeight, nodeLabelOffsetY },
         classes: padRows ? 'has-pad-badges' : ''
       };
     });
@@ -1044,14 +1070,14 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         });
       }
 
-      const relevantLeaves = leafObstacles.filter(belongsToSharedScope);
-      // Compound siblings can span much of a shared parent after expansion.
-      // For an edge whose endpoints are direct siblings, those rectangles
-      // should not force the link outside and back into their common bin.
-      // Direct sibling elements and boundary pads remain real obstacles.
-      const relevantCompounds = sharedParentId
-        ? []
-        : compoundObstacles.filter(node => !allowedCompounds.has(node.id()) && belongsToSharedScope(node));
+      // Leaf rectangles are physical obstacles regardless of logical scope.
+      // Scoping them allowed a route in one branch to pass through an element
+      // in a nearby sibling branch.
+      const relevantLeaves = leafObstacles;
+      // Endpoint containers and their ancestors are passable; every other
+      // compound in the same routing scope is a physical obstacle.
+      const relevantCompounds = compoundObstacles
+        .filter(node => !allowedCompounds.has(node.id()) && belongsToSharedScope(node));
       return [...relevantLeaves, ...relevantPadObstacles, ...relevantCompounds]
         .filter(node => !node.same(edge.source()) && !node.same(edge.target()))
         .map(node => ({
@@ -1112,6 +1138,21 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         const targetClearance = padClearance(edge.target()) || edge.scratch('_targetStubClearance') || clearance;
         let sourceStubX = source.x + sourceClearance;
         let targetStubX = target.x - targetClearance;
+        // A fixed stub can itself enter a nearby sibling before the escape
+        // router gets a chance to turn. Clip it to the nearest obstacle in the
+        // endpoint's horizontal corridor, retaining a small visible gap.
+        const obstacleGap = 8;
+        const stubObstacleEntries = [...leafObstacles, ...compoundObstacles]
+          .filter(node => !node.same(edge.source()) && !node.same(edge.target()))
+          .map(node => ({ box: node.boundingBox({ includeLabels: false }), compound: node.isParent() }));
+        stubObstacleEntries.forEach(({ box }) => {
+          if (source.y > box.y1 && source.y < box.y2 && box.x1 > source.x && box.x1 < sourceStubX + obstacleGap) {
+            sourceStubX = Math.max(source.x + 3, box.x1 - obstacleGap);
+          }
+          if (target.y > box.y1 && target.y < box.y2 && box.x2 < target.x && box.x2 > targetStubX - obstacleGap) {
+            targetStubX = Math.min(target.x - 3, box.x2 + obstacleGap);
+          }
+        });
         // Fixed endpoint clearances can cross when two nodes or a node and a
         // boundary pad are close together, creating a confusing backward jog.
         // Compress both stubs into the available forward gap instead.
@@ -1180,12 +1221,57 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
             { x: targetStubX, y: laneY },
             { x: targetStubX, y: target.y }
           ], Math.abs(trunkX - midpointX) + Math.abs(laneY - midpointY));
+          // Also turn vertically at the source stub before heading toward the
+          // trunk. This avoids an obstacle immediately to the source's right.
+          considerRoute([
+            { x: sourceStubX, y: source.y },
+            { x: sourceStubX, y: laneY },
+            { x: trunkX, y: laneY },
+            { x: trunkX, y: target.y },
+            { x: targetStubX, y: target.y }
+          ], Math.abs(trunkX - midpointX) + Math.abs(laneY - midpointY));
         }));
-        const geometry = segmentDataForControls(source, target, best.controls);
+        let controls = best.controls.map(point => ({ ...point }));
+        const firstStubX = controls[0]?.x;
+        let safeFirstStubX = firstStubX;
+        let firstRunEnd = 0;
+        while (firstRunEnd + 1 < controls.length && Math.abs(controls[firstRunEnd + 1].x - firstStubX) < .5) firstRunEnd++;
+        const firstRunMinY = Math.min(source.y, ...controls.slice(0, firstRunEnd + 1).map(point => point.y));
+        const firstRunMaxY = Math.max(source.y, ...controls.slice(0, firstRunEnd + 1).map(point => point.y));
+        stubObstacleEntries.forEach(({ box }) => {
+          if (overlaps(firstRunMinY, firstRunMaxY, box.y1, box.y2) && box.x1 > source.x && box.x1 < safeFirstStubX + obstacleGap) {
+            safeFirstStubX = Math.max(source.x + 3, box.x1 - obstacleGap);
+          }
+        });
+        for (let index = 0; index < controls.length && Math.abs(controls[index].x - firstStubX) < .5; index++) {
+          controls[index].x = safeFirstStubX;
+        }
+        const lastStubX = controls.at(-1)?.x;
+        let safeLastStubX = lastStubX;
+        let lastRunStart = controls.length - 1;
+        while (lastRunStart - 1 >= 0 && Math.abs(controls[lastRunStart - 1].x - lastStubX) < .5) lastRunStart--;
+        const lastRunMinY = Math.min(target.y, ...controls.slice(lastRunStart).map(point => point.y));
+        const lastRunMaxY = Math.max(target.y, ...controls.slice(lastRunStart).map(point => point.y));
+        stubObstacleEntries.forEach(({ box }) => {
+          if (overlaps(lastRunMinY, lastRunMaxY, box.y1, box.y2) && box.x2 < target.x && box.x2 > safeLastStubX - obstacleGap) {
+            safeLastStubX = Math.min(target.x - 3, box.x2 + obstacleGap);
+          }
+        });
+        for (let index = controls.length - 1; index >= 0 && Math.abs(controls[index].x - lastStubX) < .5; index--) {
+          controls[index].x = safeLastStubX;
+        }
+        edge.scratch('_routingDebug', {
+          firstStubX, safeFirstStubX, lastStubX, safeLastStubX,
+          source, target,
+          sourceCorridor: stubObstacleEntries.filter(({ box }) => source.y > box.y1 && source.y < box.y2 && box.x1 > source.x)
+            .map(({ box }) => box)
+        });
+        const safeRoute = orthogonalPolylineSegments([source, ...controls, target]);
+        const geometry = segmentDataForControls(source, target, controls);
         edge.scratch('_appliedTurn', null);
-        edge.scratch('_routeSegments', best.route);
-        edge.scratch('_routePoints', [source, ...best.controls, target]);
-        reservedRoutes.push(best.route);
+        edge.scratch('_routeSegments', safeRoute);
+        edge.scratch('_routePoints', [source, ...controls, target]);
+        reservedRoutes.push(safeRoute);
         edge.data('segmentWeights', geometry.weights.map(value => value.toFixed(5)).join(' '));
         edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
         return;
@@ -1684,14 +1770,15 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         '', link.sourcePad, link.sinkPad
       );
     });
-    const shiftCompound = (bin, dx) => {
+    const translateGraphNode = (node, dx = 0, dy = 0) => {
       // Compound positions are derived from their children. Moving both a
       // nested parent and its descendants applies the translation twice and
       // stretches the enclosing bin. Shift leaves only and let every compound
       // ancestor recompute its bounds around them.
-      bin.descendants().filter(node => !node.isParent() && node.data('kind') !== 'pad' && node.data('kind') !== 'edge-label').forEach(node => {
-        node.position('x', node.position('x') + dx);
-      });
+      const movable = node.isParent()
+        ? node.descendants().filter(child => !child.isParent() && child.data('kind') !== 'pad' && child.data('kind') !== 'edge-label')
+        : node;
+      movable.forEach(child => child.position({ x: child.position('x') + dx, y: child.position('y') + dy }));
     };
     const shiftDownstreamSiblings = (parent, sourceBin, targetBin, dx) => {
       const adjacency = new Map();
@@ -1722,8 +1809,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         : cy.nodes().filter(node => isGraphNode(node) && !node.parent().length);
       siblings.forEach(node => {
         if (!downstream.has(node.id())) return;
-        if (node.isParent()) shiftCompound(node, dx);
-        else node.position('x', node.position('x') + dx);
+        translateGraphNode(node, dx, 0);
       });
     };
     const siblingBinGap = nodeCount > 100 ? 76 : 104;
@@ -1767,12 +1853,6 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
       if (Math.abs(dy) < 2) return;
       const sourceBox = pair.sourceBin.boundingBox({ includeLabels: false });
       const sourceCenterY = (sourceBox.y1 + sourceBox.y2) / 2;
-      const shiftVertically = (node, amount) => {
-        const movable = node.isParent()
-          ? node.descendants().filter(child => !child.isParent() && child.data('kind') !== 'pad' && child.data('kind') !== 'edge-label')
-          : node;
-        movable.forEach(child => child.position('y', child.position('y') + amount));
-      };
       // Insert the required vertical space instead of abandoning alignment
       // when another source-side sibling occupies the destination row.
       const siblings = pair.parent.length
@@ -1783,9 +1863,30 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         const box = node.boundingBox({ includeLabels: false });
         const overlapsX = sourceBox.x1 < box.x2 + 20 && sourceBox.x2 + 20 > box.x1;
         const onMovedSide = dy > 0 ? (box.y1 + box.y2) / 2 > sourceCenterY : (box.y1 + box.y2) / 2 < sourceCenterY;
-        if (overlapsX && onMovedSide) shiftVertically(node, dy);
+        if (overlapsX && onMovedSide) translateGraphNode(node, 0, dy);
       });
-      shiftVertically(pair.sourceBin, dy);
+      translateGraphNode(pair.sourceBin, 0, dy);
+    });
+    placePadBadges();
+
+    // Cytoscape sizes compounds only after their leaves have been positioned.
+    // Parallel branches can therefore overlap even when Dagre's leaf boxes do
+    // not. Resolve those final sibling rectangles in DOT declaration order,
+    // deepest containers first, and translate each compound as one unit.
+    const siblingScopes = [...graphNodes.filter(node => node.isParent())]
+      .sort((a, b) => b.ancestors().length - a.ancestors().length)
+      .map(parent => parent.children().filter(isGraphNode));
+    siblingScopes.push(cy.nodes().filter(node => isGraphNode(node) && !node.parent().length));
+    const compoundSiblingGap = nodeCount > 100 ? 32 : 48;
+    siblingScopes.forEach(siblings => {
+      if (siblings.length < 2) return;
+      const entries = siblings.map(node => {
+        const box = node.boundingBox({ includeLabels: false });
+        return { id: node.id(), order: node.data('declarationOrder') ?? 0, ...box };
+      });
+      nonOverlappingSiblingOffsets(entries, compoundSiblingGap, 10).forEach(({ id, offset }) => {
+        translateGraphNode(cy.getElementById(id), 0, offset);
+      });
     });
     placePadBadges();
     applyEdgeGeometry();

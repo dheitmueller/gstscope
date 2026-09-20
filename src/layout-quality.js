@@ -101,7 +101,8 @@ export function auditLayout(snapshot, overrides = {}) {
     for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
       const hit = intersection(nodes[left].box, nodes[right].box, 1);
       if (hit) add('error', 'sibling-overlap', `${nodes[left].label || nodes[left].id} overlaps ${nodes[right].label || nodes[right].id}`, {
-        ids: [nodes[left].id, nodes[right].id], overlapArea: Math.round(hit.area)
+        ids: [nodes[left].id, nodes[right].id], overlapArea: Math.round(hit.area),
+        boxes: [nodes[left].box, nodes[right].box]
       });
     }
   });
@@ -151,7 +152,9 @@ export function auditLayout(snapshot, overrides = {}) {
     graphNodes.forEach(node => {
       if (excluded.has(node.id)) return;
       if (segments.some(segment => segmentCrossesBox(segment, node.box))) {
-        add('error', 'route-through-node', `${edge.label || edge.id} crosses ${node.label || node.id}`, { ids: [edge.id, node.id] });
+        add('error', 'route-through-node', `${edge.label || edge.id} crosses ${node.label || node.id}`, {
+          ids: [edge.id, node.id], routePoints: points, obstacleBox: node.box, routingDebug: edge.routingDebug
+        });
       }
     });
 

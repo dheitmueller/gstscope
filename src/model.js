@@ -92,6 +92,25 @@ export function overlapAwareLaneOffsets(items, verticalGap = 96, horizontalGap =
   return placed.map(({ id, offset }) => ({ id, offset }));
 }
 
+export function nonOverlappingSiblingOffsets(items, verticalGap = 76, horizontalGap = 12) {
+  const placed = [];
+  const offsets = [];
+  [...items]
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    .forEach(item => {
+      let offset = 0;
+      for (const other of placed) {
+        const overlapsX = item.x1 < other.x2 + horizontalGap && item.x2 + horizontalGap > other.x1;
+        if (!overlapsX) continue;
+        offset = Math.max(offset, other.y2 + other.offset + verticalGap - item.y1);
+      }
+      offset = Math.max(0, offset);
+      placed.push({ ...item, offset });
+      if (offset > 0) offsets.push({ id: item.id, offset });
+    });
+  return offsets;
+}
+
 export function topRightBadgeTarget(items, point, hitSize = 30) {
   return items
     .filter(item => point.x >= item.x2 - hitSize && point.x <= item.x2 && point.y >= item.y1 && point.y <= item.y1 + hitSize)
