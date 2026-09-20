@@ -1,6 +1,6 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-78';
 import { auditLayout } from './layout-quality.js?v=20260920-78';
-import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-79';
+import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, orderedBranchTranslations, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-80';
 import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-79';
 import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
 
@@ -2108,6 +2108,78 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
       const dx = targetBox.x1 - siblingBinGap - sourceBox.x2;
       if (Math.abs(dx) > 1) translateGraphNode(source, dx, 0, true);
     });
+
+    // Keep a split's complete downstream branches in the same vertical order
+    // as its source pads. Earlier passes order the immediate targets, but later
+    // compound and compaction passes can invert the larger branch blocks. Only
+    // unique downstream nodes move; anything reached by multiple branches is a
+    // merge point and remains fixed.
+    const preserveSourceBranchOrder = () => {
+      const groups = new Map();
+      layoutEdges.forEach(edge => {
+        const source = cy.getElementById(edge.data('layoutSource'));
+        const target = cy.getElementById(edge.data('layoutTarget'));
+        if (!source.length || !target.length || source.parent().id() !== target.parent().id()) return;
+        const pad = state.graph.pads.get(edge.data('sourcePadId'));
+        if (!Number.isFinite(pad?.declarationOrder)) return;
+        const parentId = target.parent().id() || '__root__';
+        const key = `${source.id()}\u0000${parentId}`;
+        if (!groups.has(key)) groups.set(key, new Map());
+        const seeds = groups.get(key);
+        const current = seeds.get(target.id());
+        if (!current || pad.declarationOrder < current.order) seeds.set(target.id(), { node: target, order: pad.declarationOrder });
+      });
+      groups.forEach((seeds, key) => {
+        if (seeds.size < 2) return;
+        const seedList = [...seeds.values()];
+        const seedXs = seedList.map(({ node }) => node.position('x'));
+        if (Math.max(...seedXs) - Math.min(...seedXs) > 24) return;
+        const [, parentId] = key.split('\u0000');
+        const siblings = parentId === '__root__'
+          ? cy.nodes().filter(node => isGraphNode(node) && !node.parent().length)
+          : cy.getElementById(parentId).children().filter(isGraphNode);
+        const siblingIds = new Set(siblings.map(node => node.id()));
+        const outgoing = new Map([...siblingIds].map(id => [id, new Set()]));
+        layoutEdges.forEach(edge => {
+          const source = cy.getElementById(edge.data('layoutSource'));
+          const target = cy.getElementById(edge.data('layoutTarget'));
+          const scopedSource = parentId === '__root__' ? topLevelNode(source) : directChildWithin(source, cy.getElementById(parentId));
+          const scopedTarget = parentId === '__root__' ? topLevelNode(target) : directChildWithin(target, cy.getElementById(parentId));
+          if (!scopedSource?.length || !scopedTarget?.length || scopedSource.same(scopedTarget)) return;
+          if (siblingIds.has(scopedSource.id()) && siblingIds.has(scopedTarget.id())) outgoing.get(scopedSource.id()).add(scopedTarget.id());
+        });
+        const reachable = seedList.map(({ node }) => {
+          const ids = new Set();
+          const pending = [node.id()];
+          while (pending.length) {
+            const id = pending.pop();
+            if (ids.has(id)) continue;
+            ids.add(id);
+            outgoing.get(id)?.forEach(next => pending.push(next));
+          }
+          return ids;
+        });
+        const memberships = new Map();
+        reachable.forEach(ids => ids.forEach(id => memberships.set(id, (memberships.get(id) || 0) + 1)));
+        const branches = seedList.map(({ node, order }, index) => {
+          const nodes = [...reachable[index]].filter(id => memberships.get(id) === 1).map(id => cy.getElementById(id));
+          const boxes = nodes.map(item => item.boundingBox({ includeLabels: false }));
+          if (!boxes.length) return null;
+          return {
+            id: node.id(), order, nodes,
+            minY: Math.min(...boxes.map(box => box.y1)),
+            maxY: Math.max(...boxes.map(box => box.y2))
+          };
+        }).filter(Boolean);
+        const byId = new Map(branches.map(branch => [branch.id, branch]));
+        orderedBranchTranslations(branches, compoundSiblingGap).forEach(({ id, dy }) => {
+          if (Math.abs(dy) < 1) return;
+          byId.get(id)?.nodes.forEach(node => translateGraphNode(node, 0, dy, true));
+        });
+      });
+    };
+    preserveSourceBranchOrder();
+    placePadBadges();
     applyEdgeGeometry();
     if (fit) cy.fit(undefined, 44);
     rememberPositions();

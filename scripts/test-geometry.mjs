@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from '../src/geometry.js';
-import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
+import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, orderedBranchTranslations, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -13,6 +13,20 @@ const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9
 assert.equal(cappedExpansionZoom(0.5, 3), 0.9);
 close(cappedExpansionZoom(0.8, 3), 1.2);
 assert.equal(cappedExpansionZoom(1.1, 1.4), 1.4);
+assert.deepEqual(
+  orderedBranchTranslations([
+    { id: 'video', order: 0, minY: 260, maxY: 380 },
+    { id: 'audio', order: 1, minY: 40, maxY: 200 }
+  ], 48),
+  [{ id: 'video', dy: -220 }, { id: 'audio', dy: 168 }]
+);
+assert.deepEqual(
+  orderedBranchTranslations([
+    { id: 'video', order: 0, minY: 40, maxY: 160 },
+    { id: 'audio', order: 1, minY: 220, maxY: 380 }
+  ], 48),
+  []
+);
 
 for (const { source, target, ratio } of cases) {
   const result = orthogonalSegmentData(source, target, ratio);

@@ -41,6 +41,19 @@ export function siblingOrderAssignments(items) {
     .map((item, index) => ({ id: item.id, y: slots[index] }));
 }
 
+export function orderedBranchTranslations(branches, gap = 62) {
+  if (branches.length < 2) return [];
+  const ordered = [...branches].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  const centers = ordered.map(branch => (branch.minY + branch.maxY) / 2);
+  if (centers.every((center, index) => index === 0 || center >= centers[index - 1])) return [];
+  let cursor = Math.min(...branches.map(branch => branch.minY));
+  return ordered.map(branch => {
+    const dy = cursor - branch.minY;
+    cursor += branch.maxY - branch.minY + gap;
+    return { id: branch.id, dy };
+  });
+}
+
 export function isolatedSiblingPlacements(items, gap = 62) {
   const connected = items.filter(item => item.connected);
   const isolated = items.filter(item => !item.connected);
