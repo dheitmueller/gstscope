@@ -751,6 +751,22 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
   function placePadBadges() {
     const cy = state.cy;
     if (!cy) return;
+    const terminalTargetY = pad => {
+      let currentPad = pad;
+      const seen = new Set();
+      while (currentPad?.length && !seen.has(currentPad.id())) {
+        seen.add(currentPad.id());
+        const target = cy.getElementById(currentPad.data('targetOwnerId'));
+        if (!target.length) return null;
+        if (!target.isParent()) return target.position('y');
+        const nestedPad = cy.getElementById(`pad:${currentPad.data('targetPadId')}`);
+        if (!nestedPad.length || !nestedPad.data('boundary') || nestedPad.data('ownerId') !== target.id()) {
+          return target.position('y');
+        }
+        currentPad = nestedPad;
+      }
+      return null;
+    };
     const groups = new Map();
     cy.nodes().filter(node => node.data('kind') === 'pad').forEach(pad => {
       const key = `${pad.data('ownerId')}|${pad.data('typeClass')}`;
@@ -800,7 +816,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           const bottom = box.y2 - 14;
           const entries = pads.map((pad, declarationOrder) => {
             const target = cy.getElementById(pad.data('targetOwnerId'));
-            const desiredY = target.length ? target.position().y : owner.position().y;
+            const desiredY = terminalTargetY(pad) ?? (target.length ? target.position().y : owner.position().y);
             return { pad, declarationOrder, desiredY: Math.max(top, Math.min(bottom, desiredY)), y: 0 };
           }).sort((a, b) => a.desiredY - b.desiredY || a.declarationOrder - b.declarationOrder);
           let cursor = top;
@@ -1487,6 +1503,58 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const lane = lanes.get(laneId);
       node.position({ x: position.x + lane.xOffset, y: position.y + lane.offset });
     }));
+    placePadBadges();
+
+    // Dagre ranks leaves, so two connected sibling bins can still overlap
+    // once Cytoscape wraps those leaves in padded compound rectangles. Build
+    // the corresponding bin-to-bin relationships and move each downstream
+    // compound as one unit, leaving a channel for their boundary-pad link.
+    const siblingBinPairs = new Map();
+    const nearestSharedParent = (source, target) => {
+      const targetAncestors = new Set(target.ancestors().map(node => node.id()));
+      let parent = source.parent();
+      while (parent.length && !targetAncestors.has(parent.id())) parent = parent.parent();
+      return parent;
+    };
+    const directChildWithin = (node, parent) => {
+      let child = node;
+      while (child.parent().length && !child.parent().same(parent)) child = child.parent();
+      return child;
+    };
+    layoutEdges.forEach(edge => {
+      const source = cy.getElementById(edge.data('layoutSource'));
+      const target = cy.getElementById(edge.data('layoutTarget'));
+      if (!source.length || !target.length) return;
+      const parent = nearestSharedParent(source, target);
+      if (!parent.length) return;
+      const sourceBin = directChildWithin(source, parent);
+      const targetBin = directChildWithin(target, parent);
+      if (sourceBin.same(targetBin) || !sourceBin.isParent() || !targetBin.isParent()) return;
+      siblingBinPairs.set(`${sourceBin.id()}\u0000${targetBin.id()}`, { sourceBin, targetBin });
+    });
+    const shiftCompound = (bin, dx) => {
+      // Compound positions are derived from their children. Moving both a
+      // nested parent and its descendants applies the translation twice and
+      // stretches the enclosing bin. Shift leaves only and let every compound
+      // ancestor recompute its bounds around them.
+      bin.descendants().filter(node => !node.isParent() && node.data('kind') !== 'pad' && node.data('kind') !== 'edge-label').forEach(node => {
+        node.position('x', node.position('x') + dx);
+      });
+    };
+    const siblingBinGap = nodeCount > 100 ? 76 : 104;
+    for (let pass = 0; pass < siblingBinPairs.size; pass++) {
+      let moved = false;
+      siblingBinPairs.forEach(({ sourceBin, targetBin }, key) => {
+        if (siblingBinPairs.has(`${targetBin.id()}\u0000${sourceBin.id()}`)) return;
+        const sourceBox = sourceBin.boundingBox({ includeLabels: false });
+        const targetBox = targetBin.boundingBox({ includeLabels: false });
+        const dx = sourceBox.x2 + siblingBinGap - targetBox.x1;
+        if (dx <= 0) return;
+        shiftCompound(targetBin, dx);
+        moved = true;
+      });
+      if (!moved) break;
+    }
     placePadBadges();
     applyEdgeGeometry();
     if (fit) cy.fit(undefined, 44);
