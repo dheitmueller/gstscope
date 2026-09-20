@@ -282,7 +282,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
   }
 
   function isGraphNode(node) {
-    return node.data('kind') !== 'pad' && node.data('kind') !== 'edge-label';
+    return node.data('kind') !== 'pad' && node.data('kind') !== 'edge-label' && node.data('kind') !== 'bin-gutter';
   }
 
   function displayLabel(item, collapsed) {
@@ -542,6 +542,16 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           grabbable: false
         });
       }
+      if (g.items.get(owner)?.kind === 'bin' && !state.collapsed.has(owner)) {
+        for (const direction of ['sink', 'src']) {
+          if (!groups[direction].length) continue;
+          cyNodes.push({
+            data: { id: `bin-gutter:${owner}:${direction}`, parent: owner, kind: 'bin-gutter', ownerId: owner, direction },
+            grabbable: false,
+            selectable: false
+          });
+        }
+      }
     }
 
     const connectedBoundaryPads = new Set(cyEdges.filter(edge => edge.data.ghostConnector).flatMap(edge => [edge.data.source, edge.data.target].filter(id => id.startsWith('pad:'))));
@@ -576,6 +586,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       { selector: 'node[kind="pad"][typeClass="src"]', style: { 'background-color': '#133330', 'border-color': '#4dd6c6', color: '#baf5ee' } },
       { selector: 'node.unlinked-pad', style: { 'border-style': 'dashed', opacity: .78 } },
       { selector: 'node.bin-boundary-pad', style: { 'border-width': 2, 'z-index': 1004 } },
+      { selector: 'node[kind="bin-gutter"]', style: { width: 1, height: 1, label: '', opacity: 0, events: 'no' } },
       { selector: 'node.no-target-pad', style: { 'background-opacity': .35, 'border-style': 'dashed' } },
       { selector: 'node[kind="edge-label"]', style: { width: 'data(labelWidth)', height: 'data(labelHeight)', shape: 'round-rectangle', label: 'data(label)', 'background-color': '#091019', 'background-opacity': .94, 'border-width': 0, color: '#aebccc', 'font-size': 9, 'font-weight': 400, 'line-height': 1.25, 'text-wrap': 'wrap', 'text-max-width': 190, 'text-justification': 'center', 'text-valign': 'center', 'text-halign': 'center', padding: 3, 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1003, 'overlay-opacity': 0 } },
       { selector: 'edge', style: { width: 1.6, 'line-color': '#60758b', 'target-arrow-color': '#60758b', 'target-arrow-shape': 'triangle', 'arrow-scale': .8, 'curve-style': 'segments', 'segment-distances': 'data(segmentDistances)', 'segment-weights': 'data(segmentWeights)', 'edge-distances': 'endpoints', 'source-endpoint': 'data(sourceEndpoint)', 'target-endpoint': 'data(targetEndpoint)', 'overlay-opacity': 0 } },
@@ -729,7 +740,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     }
     clearTimeout(startupTimer);
     ui.loading.classList.add('hidden');
-    const visibleElements = view.nodes.filter(node => node.data.kind !== 'pad' && node.data.kind !== 'edge-label').length;
+    const visibleElements = view.nodes.filter(node => node.data.kind !== 'pad' && node.data.kind !== 'edge-label' && node.data.kind !== 'bin-gutter').length;
     ui.stats.textContent = `${state.graph.items.size - 1} elements · ${state.graph.links.length} links · ${visibleElements} visible · ${view.hiddenCount} contracted`;
     syncControls();
     const selected = state.selectedId ? cy.getElementById(state.selectedId) : null;
@@ -755,6 +766,30 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         const badgeHeight = 14;
         const gap = 4;
         if (pads[0].data('boundary') && owner.isParent()) {
+          const boundaryInset = 6;
+          const interiorGap = 32;
+          const compoundPadding = 28;
+          const targetBoxes = pads.map(pad => cy.getElementById(pad.data('targetOwnerId')))
+            .filter(target => target.length)
+            .map(target => target.boundingBox({ includeLabels: false }));
+          const ownerChildren = owner.descendants().filter(isGraphNode);
+          const childBox = ownerChildren.length ? ownerChildren.boundingBox({ includeLabels: false }) : owner.boundingBox({ includeLabels: false });
+          const maxPadWidth = Math.max(...pads.map(pad => pad.outerWidth()));
+          const gutter = cy.getElementById(`bin-gutter:${owner.id()}:${direction}`);
+          if (gutter.length) {
+            const targetEdge = direction === 'src'
+              ? Math.max(childBox.x2, ...targetBoxes.map(box => box.x2))
+              : Math.min(childBox.x1, ...targetBoxes.map(box => box.x1));
+            const desiredBorder = direction === 'src'
+              ? targetEdge + interiorGap + maxPadWidth + boundaryInset
+              : targetEdge - interiorGap - maxPadWidth - boundaryInset;
+            gutter.position({
+              x: direction === 'src'
+                ? desiredBorder - compoundPadding - .5
+                : desiredBorder + compoundPadding + .5,
+              y: owner.position().y
+            });
+          }
           const box = owner.boundingBox({ includeLabels: false });
           const top = box.y1 + 34;
           const bottom = box.y2 - 14;
@@ -772,8 +807,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           if (overflow) entries.forEach(entry => { entry.y -= overflow; });
           entries.forEach(({ pad, y }, index) => {
             pad.scratch('_boundaryOrder', index);
+            const width = pad.outerWidth();
             pad.position({
-              x: direction === 'src' ? box.x2 : box.x1,
+              x: direction === 'src'
+                ? box.x2 - boundaryInset - width / 2
+                : box.x1 + boundaryInset + width / 2,
               y
             });
           });
@@ -857,6 +895,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const graphNodes = cy.nodes().filter(isGraphNode);
     const leafObstacles = graphNodes.filter(node => !node.isParent());
     const compoundObstacles = graphNodes.filter(node => node.isParent());
+    const padObstacles = cy.nodes().filter(node => node.data('kind') === 'pad');
     const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
     const reservedRoutes = [];
     const ancestorIds = node => {
@@ -874,6 +913,18 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const sourceAncestors = ancestorIds(edge.source());
       const targetAncestors = ancestorIds(edge.target());
       const allowedCompounds = new Set([...sourceAncestors].filter(id => targetAncestors.has(id)));
+      const sourcePosition = edge.source().position();
+      const targetPosition = edge.target().position();
+      const corridor = {
+        x1: Math.min(sourcePosition.x, targetPosition.x) - 80,
+        x2: Math.max(sourcePosition.x, targetPosition.x) + 80,
+        y1: Math.min(sourcePosition.y, targetPosition.y) - 80,
+        y2: Math.max(sourcePosition.y, targetPosition.y) + 80
+      };
+      const relevantPadObstacles = padObstacles.filter(pad => {
+        const box = pad.boundingBox({ includeLabels: false });
+        return box.x2 >= corridor.x1 && box.x1 <= corridor.x2 && box.y2 >= corridor.y1 && box.y1 <= corridor.y2;
+      });
 
       // A ghost connector deliberately crosses from a pad on a bin boundary
       // to the element that implements it. That bin (and its ancestors) is
@@ -889,7 +940,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         });
       }
 
-      return [...leafObstacles, ...compoundObstacles.filter(node => !allowedCompounds.has(node.id()))]
+      return [...leafObstacles, ...relevantPadObstacles, ...compoundObstacles.filter(node => !allowedCompounds.has(node.id()))]
         .filter(node => !node.same(edge.source()) && !node.same(edge.target()))
         .map(node => ({
           node,
@@ -940,6 +991,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       const normalRoute = normalTurnRatio == null ? null : orthogonalRouteSegments(source, target, normalTurnRatio);
       const crossesObstacle = normalRoute && routeObstacleScore(normalRoute, obstacleEntries) > 0;
       if (normalTurnRatio == null || crossesObstacle) {
+        const escapeObstacleEntries = obstacleEntries.filter(({ node }) => node.data('kind') !== 'pad');
         const clearance = 22;
         const padClearance = node => node.data('kind') === 'pad'
           ? clearance + (node.scratch('_boundaryOrder') || 0) * 10
@@ -954,7 +1006,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           midpointY,
           Math.min(source.y, target.y) - 48,
           Math.max(source.y, target.y) + 48,
-          ...obstacleEntries.flatMap(({ box }) => overlaps(sourceStubX, targetStubX, box.x1, box.x2)
+          ...escapeObstacleEntries.flatMap(({ box }) => overlaps(sourceStubX, targetStubX, box.x1, box.x2)
             ? [box.y1 - clearance, box.y2 + clearance]
             : [])
         ].map(value => value.toFixed(2)))].map(Number);
@@ -983,7 +1035,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
           midpointX,
           Math.min(source.x, target.x) - 48,
           Math.max(source.x, target.x) + 48,
-          ...obstacleEntries.flatMap(({ box }) => overlaps(source.y, target.y, box.y1, box.y2)
+          ...escapeObstacleEntries.flatMap(({ box }) => overlaps(source.y, target.y, box.y1, box.y2)
             ? [box.x1 - clearance, box.x2 + clearance]
             : [])
         ].map(value => value.toFixed(2)))].map(Number);
@@ -1154,7 +1206,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     leaves.forEach(node => guide.setNode(node.id(), { width: Math.max(node.outerWidth(), 40), height: Math.max(node.outerHeight(), 30) }));
     const boundaryLeaves = (node, side) => {
       if (!node.isParent()) return leafIds.has(node.id()) ? [node.id()] : [];
-      const descendants = node.descendants().filter(child => !child.isParent());
+      const descendants = node.descendants().filter(child => isGraphNode(child) && !child.isParent());
       const descendantIds = new Set(descendants.map(child => child.id()));
       const boundary = descendants.filter(child => {
         const internal = side === 'source'
