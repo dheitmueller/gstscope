@@ -10,6 +10,10 @@ DOT files selected with **Open DOT** or drag-and-drop stay in the browser. GstSc
 
 ![GstScope showing the default audio/video pipeline and Overview navigator](docs/gstscope-screenshot.png)
 
+## Generating DOT files
+
+To learn how to generate pipeline graph files for GstScope, see GStreamer's [Getting pipeline graphs](https://gstreamer.freedesktop.org/documentation/tutorials/basic/debugging-tools.html?gi-language=c#getting-pipeline-graphs) tutorial. It covers generating `.dot` files from `gst-launch-1.0` with `GST_DEBUG_DUMP_DOT_DIR` and from applications with GStreamer's DOT-file debugging macros.
+
 ## Local development
 
 GstScope requires Node.js 24 and npm 11 or newer.
