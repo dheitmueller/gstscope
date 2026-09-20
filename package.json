@@ -11,9 +11,9 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node scripts/test-geometry.mjs",
-    "check": "npm run test && npm run build && node --check dist/app.js && node scripts/validate-build.mjs",
-    "dev": "npm run build && node scripts/serve.mjs"
+    "test": "node scripts/test-geometry.mjs && node scripts/test-layout-quality.mjs",
+    "check": "pnpm run test && pnpm run build && node --check dist/app.js && node scripts/validate-build.mjs",
+    "dev": "pnpm run build && node scripts/serve.mjs"
   },
   "dependencies": {
     "@viz-js/viz": "3.30.0",

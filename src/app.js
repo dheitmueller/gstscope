@@ -1,4 +1,5 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js';
+import { auditLayout } from './layout-quality.js';
 import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
@@ -34,6 +35,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
     options: { queues: false, redundantTees: false, unlinkedPads: false, caps: 'media' },
     lastTap: { id: null, at: 0 },
     selectedId: null,
+    layoutAudit: null,
     filename: 'playbin3-hang.dot'
   };
   let startupTimer = null;
@@ -284,6 +286,47 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
   function isGraphNode(node) {
     return node.data('kind') !== 'pad' && node.data('kind') !== 'edge-label' && node.data('kind') !== 'bin-gutter';
   }
+
+  function captureLayoutSnapshot(cy) {
+    const ownerNode = node => node.data('kind') === 'pad'
+      ? cy.getElementById(node.data('ownerId'))
+      : node;
+    const nodeRecord = node => ({
+      id: node.id(),
+      label: node.data('label') || node.id(),
+      kind: node.data('kind'),
+      parent: node.parent().id() || '',
+      ancestors: node.ancestors().map(parent => parent.id()),
+      isParent: node.isParent(),
+      box: node.boundingBox({ includeLabels: false })
+    });
+    return {
+      nodes: cy.nodes().map(nodeRecord),
+      edges: cy.edges().map(edge => {
+        const sourceOwner = ownerNode(edge.source());
+        const targetOwner = ownerNode(edge.target());
+        return {
+          id: edge.id(),
+          label: edge.data('label') || `${sourceOwner.data('label') || sourceOwner.id()} → ${targetOwner.data('label') || targetOwner.id()}`,
+          logicalId: edge.data('logicalEdgeId') || edge.id(),
+          sourceOwner: sourceOwner.id(),
+          targetOwner: targetOwner.id(),
+          sourceParent: sourceOwner.parent().id() || '',
+          targetParent: targetOwner.parent().id() || '',
+          points: edge.scratch('_routePoints') || [edge.source().position(), edge.target().position()]
+        };
+      })
+    };
+  }
+
+  function updateLayoutAudit(cy) {
+    state.layoutAudit = auditLayout(captureLayoutSnapshot(cy));
+    document.body.dataset.layoutErrors = state.layoutAudit.counts.error;
+    document.body.dataset.layoutWarnings = state.layoutAudit.counts.warning;
+    document.body.dataset.layoutAudit = JSON.stringify(state.layoutAudit);
+  }
+
+  window.gstscopeLayoutAudit = () => state.layoutAudit ? JSON.parse(JSON.stringify(state.layoutAudit)) : null;
 
   function displayLabel(item, collapsed) {
     if (!collapsed || item.kind !== 'bin') return item.name;
@@ -1141,6 +1184,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         const geometry = segmentDataForControls(source, target, best.controls);
         edge.scratch('_appliedTurn', null);
         edge.scratch('_routeSegments', best.route);
+        edge.scratch('_routePoints', [source, ...best.controls, target]);
         reservedRoutes.push(best.route);
         edge.data('segmentWeights', geometry.weights.map(value => value.toFixed(5)).join(' '));
         edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
@@ -1153,10 +1197,12 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         edge.data('segmentWeights', '0.5');
         edge.data('segmentDistances', '0');
         edge.scratch('_routeSegments', orthogonalPolylineSegments([source, target]));
+        edge.scratch('_routePoints', [source, target]);
         return;
       }
       const route = orthogonalRouteSegments(source, target, turnRatio);
       edge.scratch('_routeSegments', route);
+      edge.scratch('_routePoints', [source, ...geometry.controls, target]);
       reservedRoutes.push(route);
       edge.data('segmentWeights', geometry.weights.map(value => value.toFixed(5)).join(' '));
       edge.data('segmentDistances', geometry.distances.map(value => value.toFixed(2)).join(' '));
@@ -1248,6 +1294,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, overlapAwareLaneOffsets
         labelBoxes.push(placement.box);
       });
     });
+    updateLayoutAudit(cy);
   }
 
   function settleAuxiliaryGeometry(cy, fit = false, padding = 44) {
