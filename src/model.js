@@ -54,6 +54,18 @@ export function orderedBranchTranslations(branches, gap = 62) {
   });
 }
 
+export function straightLineNodeOffset(box, currentY, desiredY, obstacles = [], clearance = 12) {
+  if (![box?.x1, box?.x2, box?.y1, box?.y2, currentY, desiredY].every(Number.isFinite)) return 0;
+  const dy = desiredY - currentY;
+  if (Math.abs(dy) < 1) return 0;
+  const candidate = { x1: box.x1, x2: box.x2, y1: box.y1 + dy, y2: box.y2 + dy };
+  const collision = obstacles.some(obstacle =>
+    candidate.x1 < obstacle.x2 + clearance && candidate.x2 + clearance > obstacle.x1 &&
+    candidate.y1 < obstacle.y2 + clearance && candidate.y2 + clearance > obstacle.y1
+  );
+  return collision ? 0 : dy;
+}
+
 export function isolatedSiblingPlacements(items, gap = 62) {
   const connected = items.filter(item => item.connected);
   const isolated = items.filter(item => !item.connected);

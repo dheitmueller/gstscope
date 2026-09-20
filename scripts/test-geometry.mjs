@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from '../src/geometry.js';
-import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, orderedBranchTranslations, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
+import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, orderedBranchTranslations, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, straightLineNodeOffset, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -26,6 +26,17 @@ assert.deepEqual(
     { id: 'audio', order: 1, minY: 220, maxY: 380 }
   ], 48),
   []
+);
+assert.equal(
+  straightLineNodeOffset({ x1: 100, x2: 220, y1: 80, y2: 140 }, 110, 170, []),
+  60
+);
+assert.equal(
+  straightLineNodeOffset(
+    { x1: 100, x2: 220, y1: 80, y2: 140 }, 110, 170,
+    [{ x1: 150, x2: 270, y1: 145, y2: 205 }]
+  ),
+  0
 );
 
 for (const { source, target, ratio } of cases) {

@@ -1,6 +1,6 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-78';
 import { auditLayout } from './layout-quality.js?v=20260920-78';
-import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, orderedBranchTranslations, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-80';
+import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, orderedBranchTranslations, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, straightLineNodeOffset, topRightBadgeTarget } from './model.js?v=20260920-81';
 import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-79';
 import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
 
@@ -2108,6 +2108,42 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
       const dx = targetBox.x1 - siblingBinGap - sourceBox.x2;
       if (Math.abs(dx) > 1) translateGraphNode(source, dx, 0, true);
     });
+    placePadBadges();
+
+    // A simple one-in/one-out element should not introduce two unnecessary
+    // turns when the pads on either side already share a row. Propagate that
+    // row from left to right, but decline a move that would overlap a sibling.
+    const alignStraightThroughNodes = () => {
+      const endpointY = (edge, side) => {
+        const peer = side === 'source' ? edge.source() : edge.target();
+        if (peer.data('kind') === 'pad') return peer.position('y');
+        const padId = edge.data(side === 'source' ? 'sourcePadId' : 'targetPadId');
+        const pad = padId ? cy.getElementById(`pad:${padId}`) : null;
+        return pad?.length && pad.data('ownerId') === peer.id() ? pad.position('y') : peer.position('y');
+      };
+      const padY = (node, edge, direction) => {
+        const padId = edge.data(direction === 'sink' ? 'targetPadId' : 'sourcePadId');
+        const pad = padId ? cy.getElementById(`pad:${padId}`) : null;
+        return pad?.length && pad.data('ownerId') === node.id() ? pad.position('y') : node.position('y');
+      };
+      [...graphNodes].sort((a, b) => a.position('x') - b.position('x')).forEach(node => {
+        const incoming = node.incomers('edge').filter(edge => !edge.data('auxiliary'));
+        const outgoing = node.outgoers('edge').filter(edge => !edge.data('auxiliary'));
+        if (incoming.length !== 1 || outgoing.length > 1) return;
+        const desiredY = endpointY(incoming[0], 'source');
+        if (outgoing.length && Math.abs(endpointY(outgoing[0], 'target') - desiredY) > 18) return;
+        const currentY = padY(node, incoming[0], 'sink');
+        const parent = node.parent();
+        const siblings = parent.length
+          ? parent.children().filter(isGraphNode)
+          : cy.nodes().filter(candidate => isGraphNode(candidate) && !candidate.parent().length);
+        const obstacles = siblings.filter(candidate => !candidate.same(node)).map(candidate => candidate.boundingBox({ includeLabels: false }));
+        const dy = straightLineNodeOffset(node.boundingBox({ includeLabels: false }), currentY, desiredY, obstacles);
+        if (dy) translateGraphNode(node, 0, dy, true);
+      });
+    };
+    alignStraightThroughNodes();
+    placePadBadges();
 
     // Keep a split's complete downstream branches in the same vertical order
     // as its source pads. Earlier passes order the immediate targets, but later
