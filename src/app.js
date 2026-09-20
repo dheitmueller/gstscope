@@ -1,8 +1,8 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-78';
 import { auditLayout } from './layout-quality.js?v=20260920-78';
-import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-78';
-import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-78';
-import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-78';
+import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-79';
+import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-79';
+import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -24,7 +24,7 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-78';
   const ui = {
     fileName: $('fileName'), fileInput: $('fileInput'), openButton: $('openButton'),
     search: $('searchInput'), stats: $('stats'), details: $('details'), loading: $('loading'),
-    queues: $('toggleQueues'), tees: $('toggleTees'), pads: $('togglePads'), caps: $('capsMode'),
+    queues: $('toggleQueues'), tees: $('toggleTees'), pads: $('togglePads'), moving: $('toggleMoving'), caps: $('capsMode'),
     dropOverlay: $('dropOverlay'), compare: $('compareDialog'), padTooltip: $('padTooltip')
   };
 
@@ -37,7 +37,7 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-78';
     collapsed: new Set(),
     positions: new Map(),
     preset: 'architectural',
-    options: { queues: false, redundantTees: false, unlinkedPads: false, caps: 'media' },
+    options: { queues: false, redundantTees: false, unlinkedPads: false, allowMoving: false, caps: 'media' },
     lastTap: { id: null, at: 0 },
     selectedId: null,
     layoutAudit: null,
@@ -757,7 +757,8 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-78';
     if (state.cy) state.cy.destroy();
     state.cy = cytoscape({
       container: $('cy'), elements: [...view.nodes, ...view.edges], style: stylesheet(),
-      minZoom: .07, maxZoom: 3.5, boxSelectionEnabled: false
+      minZoom: .07, maxZoom: 3.5, boxSelectionEnabled: false,
+      autoungrabify: !state.options.allowMoving
     });
     const cy = state.cy;
     cy.on('tap', 'node', evt => {
@@ -2116,13 +2117,21 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-78';
   function toggleBin(id) {
     if (id === state.graph.pipeline) return;
     const expanding = state.collapsed.has(id);
+    const previousZoom = state.cy?.zoom();
     if (expanding) state.collapsed.delete(id); else state.collapsed.add(id);
     render({ layout: true, fit: !expanding });
     if (expanding) {
       const bin = state.cy.getElementById(id);
       const descendants = bin.descendants();
       const boundary = descendants.connectedEdges().connectedNodes();
-      state.cy.fit(bin.union(descendants).union(boundary), 58);
+      const focus = bin.union(descendants).union(boundary);
+      state.cy.fit(focus, 58);
+      const fittedZoom = state.cy.zoom();
+      const zoom = cappedExpansionZoom(previousZoom, fittedZoom);
+      if (zoom < fittedZoom) {
+        state.cy.zoom(zoom);
+        state.cy.center(focus);
+      }
     }
     showItem(id);
   }
@@ -2342,6 +2351,10 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-78';
   ui.queues.addEventListener('change', () => { state.preset = ''; state.options.queues = ui.queues.checked; render({ layout: true }); });
   ui.tees.addEventListener('change', () => { state.preset = ''; state.options.redundantTees = ui.tees.checked; render({ layout: true }); });
   ui.pads.addEventListener('change', () => { state.preset = ''; state.options.unlinkedPads = ui.pads.checked; render({ layout: true }); });
+  ui.moving.addEventListener('change', () => {
+    state.options.allowMoving = ui.moving.checked;
+    state.cy?.autoungrabify(!state.options.allowMoving);
+  });
   ui.caps.addEventListener('change', () => { state.preset = ''; state.options.caps = ui.caps.value; render({ layout: false, fit: false }); });
   let searchTimer;
   ui.search.addEventListener('input', () => {

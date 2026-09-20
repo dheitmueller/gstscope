@@ -63,32 +63,11 @@ export const SAMPLE_CATALOG = [
     description: 'Two video test sources with different caps feeding a compositor and display sink.'
   },
   {
-    id: 'rtp-h264-receiver', label: 'RTP/H.264 receiver', file: 'rtp-h264-receiver.dot',
-    author: 'GstScope contributors; based on the GStreamer Project example',
-    source: 'https://gstreamer.freedesktop.org/documentation/tools/gst-launch.html#network-streaming',
-    license: 'Generated fixture — GPL-2.0-or-later',
-    description: 'UDP reception, jitter buffering, H.264 depayloading, parsing, decoding, conversion, and display.'
-  },
-  {
-    id: 'rtp-h264-transmitter', label: 'RTP/H.264 transmitter', file: 'rtp-h264-transmitter.dot',
-    author: 'GstScope contributors; based on the GStreamer Project example',
-    source: 'https://gstreamer.freedesktop.org/documentation/tools/gst-launch.html#network-streaming',
-    license: 'Generated fixture — GPL-2.0-or-later',
-    description: 'A camera source encoded to H.264, packetized as RTP, and sent over UDP.'
-  },
-  {
     id: 'appsrc-appsink', label: 'Application source and sink', file: 'appsrc-appsink.dot',
     author: 'GstScope contributors; based on work by David Schleef and Wim Taymans',
     source: 'https://gstreamer.freedesktop.org/documentation/tutorials/basic/short-cutting-the-pipeline.html',
     license: 'Generated fixture — GPL-2.0-or-later',
     description: 'Application-provided audio flowing through a queue and converters into an application sink.'
-  },
-  {
-    id: 'rist-record', label: 'RIST H.264 recorder', file: 'rist-record.dot',
-    author: 'GstScope contributors; based on the GStreamer Project example',
-    source: 'https://gstreamer.freedesktop.org/documentation/rist/ristsrc.html',
-    license: 'Generated fixture — GPL-2.0-or-later',
-    description: 'A RIST input depayloaded and parsed before Matroska muxing and file output.'
   },
   {
     id: 'uridecodebin-av', label: 'URI decode: audio + video', file: 'uridecodebin-av.dot',

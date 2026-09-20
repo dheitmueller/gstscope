@@ -19,8 +19,8 @@ const required = [
   '.nojekyll'
 ];
 
-if (SAMPLE_CATALOG.length !== 15) {
-  throw new Error(`Expected exactly 15 bundled samples, found ${SAMPLE_CATALOG.length}`);
+if (SAMPLE_CATALOG.length !== 12) {
+  throw new Error(`Expected exactly 12 bundled samples, found ${SAMPLE_CATALOG.length}`);
 }
 
 for (const sample of SAMPLE_CATALOG) {

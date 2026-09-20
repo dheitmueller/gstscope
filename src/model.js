@@ -137,6 +137,12 @@ export function centeredLayoutTranslations(currentBoxes, layoutBoxes) {
   });
 }
 
+export function cappedExpansionZoom(previousZoom, fittedZoom, maxRatio = 1.5, minimumZoom = 0.9) {
+  const previous = Number.isFinite(previousZoom) && previousZoom > 0 ? previousZoom : minimumZoom;
+  const fitted = Number.isFinite(fittedZoom) && fittedZoom > 0 ? fittedZoom : minimumZoom;
+  return Math.min(fitted, Math.max(minimumZoom, previous * maxRatio));
+}
+
 export function compactSingleInputBranches(items, edges, preferredGap = 104, clearance = 16) {
   const boxes = new Map(items.map(item => [item.id, { ...item }]));
   const incoming = new Map(items.map(item => [item.id, new Set()]));

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from '../src/geometry.js';
-import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
+import { cappedExpansionZoom, centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -9,6 +9,10 @@ const cases = [
 ];
 
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
+
+assert.equal(cappedExpansionZoom(0.5, 3), 0.9);
+close(cappedExpansionZoom(0.8, 3), 1.2);
+assert.equal(cappedExpansionZoom(1.1, 1.4), 1.4);
 
 for (const { source, target, ratio } of cases) {
   const result = orthogonalSegmentData(source, target, ratio);

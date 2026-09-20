@@ -65,25 +65,6 @@ const samples = [
     ]
   },
   {
-    file: 'rtp-h264-receiver.dot', name: 'rtp-h264-receiver',
-    elements: [
-      ['udpsrc0','GstUDPSrc',[],['src']], ['rtpjitterbuffer0','GstRtpJitterBuffer',['sink'],['src']],
-      ['rtph264depay0','GstRtpH264Depay',['sink'],['src']], ['h264parse0','GstH264Parse',['sink'],['src']],
-      ['avdec_h264_0','GstAvdecH264',['sink'],['src']], ['videoconvert0','GstVideoConvert',['sink'],['src']],
-      ['xvimagesink0','GstXvImageSink',['sink'],[]]
-    ],
-    edges: chain(['udpsrc0','rtpjitterbuffer0','rtph264depay0','h264parse0','avdec_h264_0','videoconvert0','xvimagesink0'], ['application/x-rtp','application/x-rtp','video/x-h264','video/x-h264','video/x-raw','video/x-raw'])
-  },
-  {
-    file: 'rtp-h264-transmitter.dot', name: 'rtp-h264-transmitter',
-    elements: [
-      ['v4l2src0','GstV4l2Src',[],['src']], ['queue0','GstQueue',['sink'],['src']], ['videoconvert0','GstVideoConvert',['sink'],['src']],
-      ['x264enc0','GstX264Enc',['sink'],['src']], ['capsfilter0','GstCapsFilter',['sink'],['src']],
-      ['rtph264pay0','GstRtpH264Pay',['sink'],['src']], ['udpsink0','GstUDPSink',['sink'],[]]
-    ],
-    edges: chain(['v4l2src0','queue0','videoconvert0','x264enc0','capsfilter0','rtph264pay0','udpsink0'], ['video/x-raw','video/x-raw','video/x-raw','video/x-h264','video/x-h264','application/x-rtp'])
-  },
-  {
     file: 'appsrc-appsink.dot', name: 'appsrc-appsink',
     elements: [
       ['appsrc0','GstAppSrc',[],['src']], ['queue0','GstQueue',['sink'],['src']],
@@ -91,18 +72,6 @@ const samples = [
       ['appsink0','GstAppSink',['sink'],[]]
     ],
     edges: chain(['appsrc0','queue0','audioconvert0','audioresample0','appsink0'], ['audio/x-raw','audio/x-raw','audio/x-raw','audio/x-raw'])
-  },
-  {
-    file: 'rist-record.dot', name: 'rist-record',
-    elements: [
-      ['ristsrc0','GstRistSrc',[],['src']], ['rtph264depay0','GstRtpH264Depay',['sink'],['src']],
-      ['h264parse0','GstH264Parse',['sink'],['src']], ['matroskamux0','GstMatroskaMux',['video_0'],['src']],
-      ['filesink0','GstFileSink',['sink'],[]]
-    ],
-    edges: [
-      ['ristsrc0','src','rtph264depay0','sink','application/x-rtp'], ['rtph264depay0','src','h264parse0','sink','video/x-h264'],
-      ['h264parse0','src','matroskamux0','video_0','video/x-h264'], ['matroskamux0','src','filesink0','sink','video/x-matroska']
-    ]
   },
   {
     file: 'uridecodebin-av.dot', name: 'uridecodebin-av',
