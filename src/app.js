@@ -915,11 +915,27 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const edgeObstacles = edge => {
       const sourceAncestors = ancestorIds(edge.source());
       const targetAncestors = ancestorIds(edge.target());
+      const sharedAncestors = new Set([...sourceAncestors].filter(id => targetAncestors.has(id)));
+      const sourceParent = edge.source().parent();
+      const targetParent = edge.target().parent();
+      const sharedParentId = sourceParent.length && targetParent.length && sourceParent.same(targetParent)
+        ? sourceParent.id()
+        : '';
       // A route necessarily travels through the containers that own either
       // endpoint. Treating only shared ancestors as passable makes links
       // between sibling bins regard both endpoint bins as obstacles, forcing
       // a long escape outside the bins before re-entering at the target.
       const allowedCompounds = new Set([...sourceAncestors, ...targetAncestors]);
+      const belongsToSharedScope = node => {
+        if (sharedParentId) {
+          if (node.data('kind') === 'pad') {
+            const owner = cy.getElementById(node.data('ownerId'));
+            return owner.id() === sharedParentId || owner.parent().id() === sharedParentId;
+          }
+          return node.parent().id() === sharedParentId;
+        }
+        return !sharedAncestors.size || [...ancestorIds(node)].some(id => sharedAncestors.has(id));
+      };
       const sourcePosition = edge.source().position();
       const targetPosition = edge.target().position();
       const corridor = {
@@ -929,6 +945,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         y2: Math.max(sourcePosition.y, targetPosition.y) + 80
       };
       const relevantPadObstacles = padObstacles.filter(pad => {
+        if (!belongsToSharedScope(pad)) return false;
         const box = pad.boundingBox({ includeLabels: false });
         return box.x2 >= corridor.x1 && box.x1 <= corridor.x2 && box.y2 >= corridor.y1 && box.y1 <= corridor.y2;
       });
@@ -947,7 +964,15 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
         });
       }
 
-      return [...leafObstacles, ...relevantPadObstacles, ...compoundObstacles.filter(node => !allowedCompounds.has(node.id()))]
+      const relevantLeaves = leafObstacles.filter(belongsToSharedScope);
+      // Compound siblings can span much of a shared parent after expansion.
+      // For an edge whose endpoints are direct siblings, those rectangles
+      // should not force the link outside and back into their common bin.
+      // Direct sibling elements and boundary pads remain real obstacles.
+      const relevantCompounds = sharedParentId
+        ? []
+        : compoundObstacles.filter(node => !allowedCompounds.has(node.id()) && belongsToSharedScope(node));
+      return [...relevantLeaves, ...relevantPadObstacles, ...relevantCompounds]
         .filter(node => !node.same(edge.source()) && !node.same(edge.target()))
         .map(node => ({
           node,
