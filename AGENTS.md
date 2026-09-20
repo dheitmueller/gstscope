@@ -26,6 +26,11 @@ view. Use the Normal defaults: queues hidden, redundant tees shown, unlinked pad
 hidden, and caps set to **Media Type**. Do not substitute Architectural view or
 an Expand All state when evaluating this fixture.
 
+`proto1.dot` is a private, local-only validation input. Never copy it into this
+repository, commit it, publish it, or derive a bundled sample from its contents.
+It remains the temporary canonical fixture only until the project owner selects
+a redistributable sample from the bundled catalog.
+
 Use the local build in the Codex web panel while iterating. Do not take control of
 the user's browser. Verify GitHub Pages only once after local checks pass and the
 change is deployed.

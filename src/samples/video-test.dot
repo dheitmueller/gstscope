@@ -1,0 +1,50 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  label="<GstPipeline>\nvideo-test\n[>]";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  subgraph cluster_videotestsrc0_0 {
+    label="GstVideoTestSrc\nvideotestsrc0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videotestsrc0_src {
+      label="";
+      style="invis";
+      videotestsrc0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_videoconvert0_1 {
+    label="GstVideoConvert\nvideoconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videoconvert0_sink {
+      label="";
+      style="invis";
+      videoconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videoconvert0_src {
+      label="";
+      style="invis";
+      videoconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videoconvert0_sink -> videoconvert0_src [style="invis"];
+  }
+  subgraph cluster_autovideosink0_2 {
+    label="GstAutoVideoSink\nautovideosink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_autovideosink0_sink {
+      label="";
+      style="invis";
+      autovideosink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  videotestsrc0_src -> videoconvert0_sink [label="video/x-raw"];
+  videoconvert0_src -> autovideosink0_sink [label="video/x-raw"];
+}

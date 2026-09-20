@@ -10,6 +10,7 @@
     "npm": ">=11"
   },
   "scripts": {
+    "generate:samples": "node scripts/generate-samples.mjs",
     "build": "node scripts/build.mjs",
     "test": "node scripts/test-geometry.mjs && node scripts/test-layout-quality.mjs",
     "check": "node scripts/test-geometry.mjs && node scripts/test-layout-quality.mjs && node scripts/build.mjs && node --check dist/app.js && node scripts/validate-build.mjs",

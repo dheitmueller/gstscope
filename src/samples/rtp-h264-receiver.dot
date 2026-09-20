@@ -1,0 +1,122 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  label="<GstPipeline>\nrtp-h264-receiver\n[>]";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  subgraph cluster_udpsrc0_0 {
+    label="GstUDPSrc\nudpsrc0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_udpsrc0_src {
+      label="";
+      style="invis";
+      udpsrc0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_rtpjitterbuffer0_1 {
+    label="GstRtpJitterBuffer\nrtpjitterbuffer0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_rtpjitterbuffer0_sink {
+      label="";
+      style="invis";
+      rtpjitterbuffer0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_rtpjitterbuffer0_src {
+      label="";
+      style="invis";
+      rtpjitterbuffer0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    rtpjitterbuffer0_sink -> rtpjitterbuffer0_src [style="invis"];
+  }
+  subgraph cluster_rtph264depay0_2 {
+    label="GstRtpH264Depay\nrtph264depay0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_rtph264depay0_sink {
+      label="";
+      style="invis";
+      rtph264depay0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_rtph264depay0_src {
+      label="";
+      style="invis";
+      rtph264depay0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    rtph264depay0_sink -> rtph264depay0_src [style="invis"];
+  }
+  subgraph cluster_h264parse0_3 {
+    label="GstH264Parse\nh264parse0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_h264parse0_sink {
+      label="";
+      style="invis";
+      h264parse0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_h264parse0_src {
+      label="";
+      style="invis";
+      h264parse0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    h264parse0_sink -> h264parse0_src [style="invis"];
+  }
+  subgraph cluster_avdec_h264_0_4 {
+    label="GstAvdecH264\navdec_h264_0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_avdec_h264_0_sink {
+      label="";
+      style="invis";
+      avdec_h264_0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_avdec_h264_0_src {
+      label="";
+      style="invis";
+      avdec_h264_0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    avdec_h264_0_sink -> avdec_h264_0_src [style="invis"];
+  }
+  subgraph cluster_videoconvert0_5 {
+    label="GstVideoConvert\nvideoconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videoconvert0_sink {
+      label="";
+      style="invis";
+      videoconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videoconvert0_src {
+      label="";
+      style="invis";
+      videoconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videoconvert0_sink -> videoconvert0_src [style="invis"];
+  }
+  subgraph cluster_xvimagesink0_6 {
+    label="GstXvImageSink\nxvimagesink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_xvimagesink0_sink {
+      label="";
+      style="invis";
+      xvimagesink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  udpsrc0_src -> rtpjitterbuffer0_sink [label="application/x-rtp"];
+  rtpjitterbuffer0_src -> rtph264depay0_sink [label="application/x-rtp"];
+  rtph264depay0_src -> h264parse0_sink [label="video/x-h264"];
+  h264parse0_src -> avdec_h264_0_sink [label="video/x-h264"];
+  avdec_h264_0_src -> videoconvert0_sink [label="video/x-raw"];
+  videoconvert0_src -> xvimagesink0_sink [label="video/x-raw"];
+}

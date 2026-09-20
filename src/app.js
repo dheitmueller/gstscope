@@ -1,6 +1,7 @@
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js';
 import { auditLayout } from './layout-quality.js';
-import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
+import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js';
+import { SAMPLE_CATALOG } from './sample-catalog.js';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -36,26 +37,34 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
     lastTap: { id: null, at: 0 },
     selectedId: null,
     layoutAudit: null,
-    filename: 'playbin3-hang.dot'
+    filename: '',
+    sampleMeta: null,
+    building: false
   };
   let startupTimer = null;
+  let loadSequence = 0;
+  let activeFetchController = null;
+  const query = new URLSearchParams(location.search);
+  const requestedPreset = ['architectural', 'normal', 'debug'].includes(query.get('preset')) ? query.get('preset') : 'architectural';
 
-  function showLoading() {
+  function showLoading(loadId = loadSequence) {
     clearTimeout(startupTimer);
+    state.building = true;
     ui.loading.classList.remove('hidden', 'error');
     ui.loading.innerHTML = '<span></span>Building semantic view';
     startupTimer = setTimeout(() => {
-      if (!state.graph) showStartupError(new Error('The initial graph took too long to load.'));
+      if (state.building && loadId === loadSequence) showStartupError(new Error('The graph took too long to build. Retry this sample or choose another one.'));
     }, 12000);
   }
 
   function showStartupError(error) {
     clearTimeout(startupTimer);
+    state.building = false;
     ui.loading.classList.remove('hidden');
     ui.loading.classList.add('error');
     ui.loading.innerHTML = `<strong>Could not build the semantic view</strong><small>${esc(error.message)}</small><button class="button" id="retryStartup">Retry</button>`;
     ui.stats.textContent = 'Startup interrupted';
-    $('retryStartup').addEventListener('click', () => loadBuiltIn().catch(showStartupError));
+    $('retryStartup').addEventListener('click', () => loadSample($('sampleSelect').value).catch(showStartupError));
     console.error(error);
   }
 
@@ -810,6 +819,7 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
       settleAuxiliaryGeometry(cy, fit, 42);
     }
     clearTimeout(startupTimer);
+    state.building = false;
     ui.loading.classList.add('hidden');
     const visibleElements = view.nodes.filter(node => node.data.kind !== 'pad' && node.data.kind !== 'edge-label' && node.data.kind !== 'bin-gutter').length;
     ui.stats.textContent = `${state.graph.items.size - 1} elements · ${state.graph.links.length} links · ${visibleElements} visible · ${view.hiddenCount} contracted`;
@@ -1718,13 +1728,13 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
     }));
     placePadBadges();
 
-    const translateGraphNode = (node, dx = 0, dy = 0) => {
+    const translateGraphNode = (node, dx = 0, dy = 0, includeAuxiliary = false) => {
       // Compound positions are derived from their children. Moving both a
       // nested parent and its descendants applies the translation twice and
       // stretches the enclosing bin. Shift leaves only and let every compound
       // ancestor recompute its bounds around them.
       const movable = node.isParent()
-        ? node.descendants().filter(child => !child.isParent() && child.data('kind') !== 'pad' && child.data('kind') !== 'edge-label')
+        ? node.descendants().filter(child => !child.isParent() && (includeAuxiliary || (child.data('kind') !== 'pad' && child.data('kind') !== 'edge-label')))
         : node;
       movable.forEach(child => child.position({ x: child.position('x') + dx, y: child.position('y') + dy }));
     };
@@ -1748,7 +1758,7 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
         if (children.length < 2) return;
         const childIds = new Set(children.map(child => child.id()));
         const local = new dagre.graphlib.Graph({ multigraph: true })
-          .setGraph({ rankdir: 'LR', ranksep: nodeCount > 100 ? 76 : 104, nodesep: nodeCount > 100 ? 44 : 58, edgesep: 24, marginx: 0, marginy: 0 })
+          .setGraph({ rankdir: 'LR', ranker: 'tight-tree', ranksep: nodeCount > 100 ? 76 : 104, nodesep: nodeCount > 100 ? 44 : 58, edgesep: 24, marginx: 0, marginy: 0 })
           .setDefaultEdgeLabel(() => ({}));
         children.forEach(child => {
           const box = child.boundingBox({ includeLabels: false });
@@ -1889,7 +1899,7 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
       if (!outgoingPairs.has(pair.sourceBin.id())) outgoingPairs.set(pair.sourceBin.id(), []);
       outgoingPairs.get(pair.sourceBin.id()).push(pair);
     });
-    outgoingPairs.forEach((pairs, sourceId) => {
+    const alignSourceOnlyBins = () => outgoingPairs.forEach((pairs, sourceId) => {
       if (pairs.length !== 1 || incomingPairCount.get(sourceId)) return;
       const pair = pairs[0];
       const flowEdges = cy.edges().filter(edge => pair.logicalIds.has(edge.data('logicalEdgeId')));
@@ -1922,6 +1932,7 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
       // because of unrelated downstream depth, leaving a multi-screen stub.
       translateGraphNode(pair.sourceBin, dx, dy);
     });
+    alignSourceOnlyBins();
     placePadBadges();
 
     // Cytoscape sizes compounds only after their leaves have been positioned.
@@ -1944,6 +1955,94 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
       });
     });
     placePadBadges();
+
+    // Layered ranking may stretch a tee's longer branch to match ranks from a
+    // much shorter terminal branch. Compact single-input downstream chains
+    // into unused horizontal space, separately within each compound scope.
+    siblingScopes.forEach(siblings => {
+      if (siblings.length < 2) return;
+      const parent = siblings[0]?.parent() || cy.collection();
+      if (!parent.length) return;
+      const entries = siblings.map(node => ({ id: node.id(), ...node.boundingBox({ includeLabels: false }) }));
+      const siblingIds = new Set(entries.map(entry => entry.id));
+      const edges = [];
+      const seen = new Set();
+      layoutEdges.forEach(edge => {
+        const source = parent.length
+          ? directChildWithin(cy.getElementById(edge.data('layoutSource')), parent)
+          : topLevelNode(cy.getElementById(edge.data('layoutSource')));
+        const target = parent.length
+          ? directChildWithin(cy.getElementById(edge.data('layoutTarget')), parent)
+          : topLevelNode(cy.getElementById(edge.data('layoutTarget')));
+        if (!source?.length || !target?.length || source.same(target) || !siblingIds.has(source.id()) || !siblingIds.has(target.id())) return;
+        const key = `${source.id()}\u0000${target.id()}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        edges.push({ source: source.id(), target: target.id() });
+      });
+      compactSingleInputBranches(entries, edges, siblingBinGap, 18).forEach(({ id, dx }) => {
+        translateGraphNode(cy.getElementById(id), dx, 0);
+      });
+    });
+
+    // Nested compaction changes compound bounds after the original outer
+    // layout has already used them. Reflow only the root containers with
+    // their final sizes so a shrunken source bin remains next to its sink.
+    const rootSiblings = siblingScopes.at(-1);
+    const finalOuterAlignments = [];
+    if (rootSiblings?.length > 1) {
+      const rootIds = new Set(rootSiblings.map(node => node.id()));
+      const outer = new dagre.graphlib.Graph({ multigraph: true })
+        .setGraph({ rankdir: 'LR', ranker: 'tight-tree', ranksep: nodeCount > 100 ? 76 : 104, nodesep: nodeCount > 100 ? 44 : 58, edgesep: 24, marginx: 0, marginy: 0 })
+        .setDefaultEdgeLabel(() => ({}));
+      rootSiblings.forEach(node => {
+        const box = node.boundingBox({ includeLabels: false });
+        outer.setNode(node.id(), { width: Math.max(box.w, 40), height: Math.max(box.h, 30) });
+      });
+      const outerEdges = new Set();
+      layoutEdges.forEach((edge, index) => {
+        const source = topLevelNode(cy.getElementById(edge.data('layoutSource')));
+        const target = topLevelNode(cy.getElementById(edge.data('layoutTarget')));
+        if (!source.length || !target.length || source.same(target) || !rootIds.has(source.id()) || !rootIds.has(target.id())) return;
+        const key = `${source.id()}\u0000${target.id()}`;
+        if (outerEdges.has(key)) return;
+        outerEdges.add(key);
+        outer.setEdge(source.id(), target.id(), {}, `outer:${index}`);
+      });
+      dagre.layout(outer);
+      const currentBoxes = rootSiblings.map(node => ({ id: node.id(), ...node.boundingBox({ includeLabels: false }) }));
+      const outerBoxes = rootSiblings.map(node => {
+        const position = outer.node(node.id());
+        return { id: node.id(), x1: position.x - position.width / 2, x2: position.x + position.width / 2, y1: position.y - position.height / 2, y2: position.y + position.height / 2 };
+      });
+      centeredLayoutTranslations(currentBoxes, outerBoxes).forEach(({ id, dx, dy }) => {
+        translateGraphNode(cy.getElementById(id), dx, dy, true);
+      });
+      const outerIncoming = new Map([...rootIds].map(id => [id, new Set()]));
+      const outerOutgoing = new Map([...rootIds].map(id => [id, new Set()]));
+      outerEdges.forEach(key => {
+        const [source, target] = key.split('\u0000');
+        outerOutgoing.get(source)?.add(target);
+        outerIncoming.get(target)?.add(source);
+      });
+      outerOutgoing.forEach((targets, sourceId) => {
+        if (targets.size !== 1 || outerIncoming.get(sourceId)?.size) return;
+        const targetId = [...targets][0];
+        finalOuterAlignments.push({ sourceId, targetId });
+      });
+    }
+    placePadBadges();
+    // Boundary pads participate in compound bounds and are finalized above.
+    // Perform source-only alignment last, moving the pads with the bin, so a
+    // subsequent pad placement cannot recreate the gap we just removed.
+    finalOuterAlignments.forEach(({ sourceId, targetId }) => {
+      const source = cy.getElementById(sourceId);
+      const target = cy.getElementById(targetId);
+      const sourceBox = source.boundingBox({ includeLabels: false });
+      const targetBox = target.boundingBox({ includeLabels: false });
+      const dx = targetBox.x1 - siblingBinGap - sourceBox.x2;
+      if (Math.abs(dx) > 1) translateGraphNode(source, dx, 0, true);
+    });
     applyEdgeGeometry();
     if (fit) cy.fit(undefined, 44);
     rememberPositions();
@@ -2005,7 +2104,10 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
     const padRows = item.pads.map(pid => state.graph.pads.get(pid)).filter(Boolean).map(p => `<span class="pill">${esc(p.direction)} · ${esc(p.name)}${p.linked ? '' : ' · unlinked'}</span>`).join('');
     const props = Object.keys(item.properties).length ? `<div class="section-label">Properties</div><div class="code">${Object.entries(item.properties).map(([k,v]) => `${esc(k)} = ${esc(v)}`).join('\n')}</div>` : '';
     const action = item.kind === 'bin' && id !== state.graph.pipeline ? `<button class="button" id="inspectorToggle">${state.collapsed.has(id) ? 'Expand bin' : 'Collapse bin'}</button>` : '';
-    ui.details.innerHTML = `<div class="eyebrow">${esc(item.kind)}</div><h2>${esc(item.name)}</h2><div class="detail-grid"><dt>Factory</dt><dd>${esc(item.factory)}</dd><dt>State</dt><dd>${esc(item.state || 'Not reported')}</dd><dt>Parent</dt><dd>${esc(parent?.name || '—')}</dd><dt>DOT id</dt><dd>${esc(item.id)}</dd></div>${action}<div class="section-label">Pads · ${item.pads.length}</div><div>${padRows || '<span class="muted">No pads recovered</span>'}</div>${props}`;
+    const sample = id === state.graph.pipeline && state.sampleMeta
+      ? `<div class="section-label">Sample provenance</div><p class="muted">${esc(state.sampleMeta.description)}</p><dl class="detail-grid"><dt>Author</dt><dd>${esc(state.sampleMeta.author)}</dd><dt>License</dt><dd>${esc(state.sampleMeta.license)}</dd><dt>Source</dt><dd><a href="${esc(state.sampleMeta.source)}" target="_blank" rel="noreferrer">View original reference</a></dd></dl>`
+      : '';
+    ui.details.innerHTML = `<div class="eyebrow">${esc(item.kind)}</div><h2>${esc(item.name)}</h2><div class="detail-grid"><dt>Factory</dt><dd>${esc(item.factory)}</dd><dt>State</dt><dd>${esc(item.state || 'Not reported')}</dd><dt>Parent</dt><dd>${esc(parent?.name || '—')}</dd><dt>DOT id</dt><dd>${esc(item.id)}</dd></div>${sample}${action}<div class="section-label">Pads · ${item.pads.length}</div><div>${padRows || '<span class="muted">No pads recovered</span>'}</div>${props}`;
     $('inspectorToggle')?.addEventListener('click', () => toggleBin(id));
   }
 
@@ -2103,45 +2205,54 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
     ui.stats.textContent = `${modelMatches.length} match${modelMatches.length === 1 ? '' : 'es'} for “${ui.search.value}”`;
   }
 
-  async function loadText(text, filename) {
+  async function loadText(text, filename, sampleMeta = null, loadId = ++loadSequence) {
     try {
-      showLoading();
+      if (loadId !== loadSequence) return;
+      showLoading(loadId);
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      if (loadId !== loadSequence) return;
+      if (!/^\s*digraph\b/.test(text) || !/}\s*$/.test(text)) throw new Error('The DOT sample is incomplete or malformed.');
       ui.fileName.textContent = filename;
       state.filename = filename;
+      state.sampleMeta = sampleMeta;
       state.graph = parseDot(text, filename);
       state.positions.clear();
       state.selectedId = null;
-      applyPreset('architectural');
+      applyPreset(requestedPreset);
       showItem(state.graph.pipeline);
     } catch (error) {
-      ui.loading.classList.add('hidden');
-      ui.stats.textContent = 'Could not parse DOT';
-      ui.details.innerHTML = `<div class="eyebrow">Import error</div><h2>This DOT file could not be read</h2><p class="muted">${esc(error.message)}</p>`;
-      console.error(error);
+      if (loadId === loadSequence) showStartupError(error);
     }
   }
 
-  async function loadBuiltIn() {
-    showLoading();
+  async function loadSample(id) {
+    const sample = SAMPLE_CATALOG.find(entry => entry.id === id) || SAMPLE_CATALOG[0];
+    const loadId = ++loadSequence;
+    activeFetchController?.abort();
+    showLoading(loadId);
+    $('sampleSelect').value = sample.id;
+    if (sample.generated) return loadText(makeStressDot(), 'synthetic-stress-280.dot', sample, loadId);
     let lastError;
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 7000);
+      activeFetchController = controller;
+      const timeout = setTimeout(() => controller.abort(), 8000);
       try {
-        const response = await fetch('samples/playbin3-hang.dot', {
+        const response = await fetch(`samples/${sample.file}`, {
           signal: controller.signal,
           cache: attempt ? 'reload' : 'default'
         });
-        if (!response.ok) throw new Error(`Built-in sample returned HTTP ${response.status}`);
-        await loadText(await response.text(), 'playbin3-hang.dot');
+        if (!response.ok) throw new Error(`Sample returned HTTP ${response.status}`);
+        await loadText(await response.text(), sample.file, sample, loadId);
         return;
       } catch (error) {
+        if (loadId !== loadSequence) return;
         lastError = error;
       } finally {
         clearTimeout(timeout);
       }
     }
-    throw new Error(lastError?.name === 'AbortError' ? 'The built-in sample request timed out.' : lastError?.message || 'Built-in sample is unavailable.');
+    throw new Error(lastError?.name === 'AbortError' ? 'The sample request timed out.' : lastError?.message || 'The sample is unavailable.');
   }
 
   function makeStressDot() {
@@ -2169,12 +2280,18 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
     return out.join('\n');
   }
 
+  const localOption = new Option('Local DOT file', 'local');
+  localOption.hidden = true;
+  $('sampleSelect').append(localOption, ...SAMPLE_CATALOG.map(sample => new Option(sample.label, sample.id)));
   ui.openButton.addEventListener('click', () => ui.fileInput.click());
-  ui.fileInput.addEventListener('change', async () => { const file = ui.fileInput.files[0]; if (file) loadText(await file.text(), file.name); });
-  $('sampleSelect').addEventListener('change', e => {
-    if (e.target.value === 'stress') loadText(makeStressDot(), 'synthetic-stress-280.dot');
-    else loadBuiltIn().catch(showStartupError);
+  ui.fileInput.addEventListener('change', async () => {
+    const file = ui.fileInput.files[0];
+    if (!file) return;
+    activeFetchController?.abort();
+    $('sampleSelect').value = 'local';
+    loadText(await file.text(), file.name);
   });
+  $('sampleSelect').addEventListener('change', e => loadSample(e.target.value).catch(showStartupError));
   document.querySelectorAll('[data-preset]').forEach(btn => btn.addEventListener('click', () => applyPreset(btn.dataset.preset)));
   $('fitButton').addEventListener('click', () => state.cy?.fit(undefined, 42));
   $('layoutButton').addEventListener('click', () => runLayout(true));
@@ -2226,12 +2343,17 @@ import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxy
   document.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; ui.dropOverlay.classList.add('show'); });
   document.addEventListener('dragover', e => e.preventDefault());
   document.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; ui.dropOverlay.classList.remove('show'); } });
-  document.addEventListener('drop', async e => { e.preventDefault(); dragDepth = 0; ui.dropOverlay.classList.remove('show'); const file = [...e.dataTransfer.files].find(f => f.name.endsWith('.dot')); if (file) loadText(await file.text(), file.name); });
+  document.addEventListener('drop', async e => {
+    e.preventDefault(); dragDepth = 0; ui.dropOverlay.classList.remove('show');
+    const file = [...e.dataTransfer.files].find(f => f.name.endsWith('.dot'));
+    if (!file) return;
+    activeFetchController?.abort();
+    $('sampleSelect').value = 'local';
+    loadText(await file.text(), file.name);
+  });
 
-  if (new URLSearchParams(location.search).get('sample') === 'stress') {
-    $('sampleSelect').value = 'stress';
-    loadText(makeStressDot(), 'synthetic-stress-280.dot');
-  } else {
-    loadBuiltIn().catch(showStartupError);
-  }
+  addEventListener('error', event => { if (state.building) showStartupError(event.error || new Error(event.message || 'Unexpected startup failure.')); });
+  addEventListener('unhandledrejection', event => { if (state.building) showStartupError(event.reason instanceof Error ? event.reason : new Error(String(event.reason))); });
+  const initialSample = SAMPLE_CATALOG.some(sample => sample.id === query.get('sample')) ? query.get('sample') : SAMPLE_CATALOG[0].id;
+  loadSample(initialSample).catch(showStartupError);
 })();

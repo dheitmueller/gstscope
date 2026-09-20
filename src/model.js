@@ -136,3 +136,60 @@ export function centeredLayoutTranslations(currentBoxes, layoutBoxes) {
     }];
   });
 }
+
+export function compactSingleInputBranches(items, edges, preferredGap = 104, clearance = 16) {
+  const boxes = new Map(items.map(item => [item.id, { ...item }]));
+  const incoming = new Map(items.map(item => [item.id, new Set()]));
+  const outgoing = new Map(items.map(item => [item.id, new Set()]));
+  edges.forEach(({ source, target }) => {
+    if (source === target || !boxes.has(source) || !boxes.has(target)) return;
+    outgoing.get(source).add(target);
+    incoming.get(target).add(source);
+  });
+  const offsets = new Map(items.map(item => [item.id, 0]));
+  const verticallyOverlap = (a, b) => a.y1 < b.y2 + clearance && a.y2 + clearance > b.y1;
+
+  // Long direct edges commonly appear where a tee's short terminal branch
+  // forces Dagre to align its longer sibling branch with distant ranks. Pull a
+  // single-input branch and its exclusive downstream chain left, but never
+  // pass a sibling occupying the same vertical band.
+  const candidates = edges
+    .filter(({ source, target }) => boxes.has(source) && boxes.has(target) && incoming.get(target).size === 1)
+    .sort((a, b) => (boxes.get(b.target).x1 - boxes.get(b.source).x2) - (boxes.get(a.target).x1 - boxes.get(a.source).x2));
+  candidates.forEach(({ source, target }) => {
+    const sourceBox = boxes.get(source);
+    const targetBox = boxes.get(target);
+    let shift = targetBox.x1 - sourceBox.x2 - preferredGap;
+    if (shift <= 1) return;
+
+    const moving = new Set([target]);
+    const pending = [target];
+    while (pending.length) {
+      const current = pending.shift();
+      for (const next of outgoing.get(current) || []) {
+        if (moving.has(next)) continue;
+        if ([...(incoming.get(next) || [])].every(id => moving.has(id))) {
+          moving.add(next);
+          pending.push(next);
+        }
+      }
+    }
+
+    for (const id of moving) {
+      const movingBox = boxes.get(id);
+      for (const [otherId, otherBox] of boxes) {
+        if (moving.has(otherId) || otherBox.x2 > movingBox.x1 || !verticallyOverlap(movingBox, otherBox)) continue;
+        shift = Math.min(shift, movingBox.x1 - otherBox.x2 - clearance);
+      }
+    }
+    if (shift <= 1) return;
+    moving.forEach(id => {
+      const box = boxes.get(id);
+      box.x1 -= shift;
+      box.x2 -= shift;
+      offsets.set(id, offsets.get(id) - shift);
+    });
+  });
+
+  return [...offsets].filter(([, dx]) => Math.abs(dx) > 1).map(([id, dx]) => ({ id, dx }));
+}

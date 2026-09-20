@@ -1,0 +1,117 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  label="<GstPipeline>\nuridecodebin-av\n[>]";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  subgraph cluster_uridecodebin0_0 {
+    label="GstURIDecodeBin\nuridecodebin0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_uridecodebin0_src {
+      label="";
+      style="invis";
+      uridecodebin0_audio_0 [color=black, fillcolor="#ffaaaa", label="audio_0\n[>][bfb]", height="0.2", style="filled,solid"];
+      uridecodebin0_video_0 [color=black, fillcolor="#ffaaaa", label="video_0\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_audioconvert0_1 {
+    label="GstAudioConvert\naudioconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_audioconvert0_sink {
+      label="";
+      style="invis";
+      audioconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_audioconvert0_src {
+      label="";
+      style="invis";
+      audioconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    audioconvert0_sink -> audioconvert0_src [style="invis"];
+  }
+  subgraph cluster_audioresample0_2 {
+    label="GstAudioResample\naudioresample0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_audioresample0_sink {
+      label="";
+      style="invis";
+      audioresample0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_audioresample0_src {
+      label="";
+      style="invis";
+      audioresample0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    audioresample0_sink -> audioresample0_src [style="invis"];
+  }
+  subgraph cluster_autoaudiosink0_3 {
+    label="GstAutoAudioSink\nautoaudiosink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_autoaudiosink0_sink {
+      label="";
+      style="invis";
+      autoaudiosink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_videoconvert0_4 {
+    label="GstVideoConvert\nvideoconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videoconvert0_sink {
+      label="";
+      style="invis";
+      videoconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videoconvert0_src {
+      label="";
+      style="invis";
+      videoconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videoconvert0_sink -> videoconvert0_src [style="invis"];
+  }
+  subgraph cluster_videoscale0_5 {
+    label="GstVideoScale\nvideoscale0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videoscale0_sink {
+      label="";
+      style="invis";
+      videoscale0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videoscale0_src {
+      label="";
+      style="invis";
+      videoscale0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videoscale0_sink -> videoscale0_src [style="invis"];
+  }
+  subgraph cluster_autovideosink0_6 {
+    label="GstAutoVideoSink\nautovideosink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_autovideosink0_sink {
+      label="";
+      style="invis";
+      autovideosink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  uridecodebin0_audio_0 -> audioconvert0_sink [label="audio/x-raw"];
+  audioconvert0_src -> audioresample0_sink [label="audio/x-raw"];
+  audioresample0_src -> autoaudiosink0_sink [label="audio/x-raw"];
+  uridecodebin0_video_0 -> videoconvert0_sink [label="video/x-raw"];
+  videoconvert0_src -> videoscale0_sink [label="video/x-raw"];
+  videoscale0_src -> autovideosink0_sink [label="video/x-raw"];
+}

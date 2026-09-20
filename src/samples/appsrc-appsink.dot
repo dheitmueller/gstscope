@@ -1,0 +1,86 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  label="<GstPipeline>\nappsrc-appsink\n[>]";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  subgraph cluster_appsrc0_0 {
+    label="GstAppSrc\nappsrc0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_appsrc0_src {
+      label="";
+      style="invis";
+      appsrc0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_queue0_1 {
+    label="GstQueue\nqueue0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_queue0_sink {
+      label="";
+      style="invis";
+      queue0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_queue0_src {
+      label="";
+      style="invis";
+      queue0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    queue0_sink -> queue0_src [style="invis"];
+  }
+  subgraph cluster_audioconvert0_2 {
+    label="GstAudioConvert\naudioconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_audioconvert0_sink {
+      label="";
+      style="invis";
+      audioconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_audioconvert0_src {
+      label="";
+      style="invis";
+      audioconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    audioconvert0_sink -> audioconvert0_src [style="invis"];
+  }
+  subgraph cluster_audioresample0_3 {
+    label="GstAudioResample\naudioresample0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_audioresample0_sink {
+      label="";
+      style="invis";
+      audioresample0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_audioresample0_src {
+      label="";
+      style="invis";
+      audioresample0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    audioresample0_sink -> audioresample0_src [style="invis"];
+  }
+  subgraph cluster_appsink0_4 {
+    label="GstAppSink\nappsink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_appsink0_sink {
+      label="";
+      style="invis";
+      appsink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  appsrc0_src -> queue0_sink [label="audio/x-raw"];
+  queue0_src -> audioconvert0_sink [label="audio/x-raw"];
+  audioconvert0_src -> audioresample0_sink [label="audio/x-raw"];
+  audioresample0_src -> appsink0_sink [label="audio/x-raw"];
+}

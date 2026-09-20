@@ -14,10 +14,7 @@
     <div class="toolbar">
       <button class="button primary" id="openButton">Open DOT</button>
       <input id="fileInput" type="file" accept=".dot,text/vnd.graphviz,text/plain" hidden>
-      <select class="sample-select" id="sampleSelect" aria-label="Built-in sample">
-        <option value="real">Real playbin3 sample</option>
-        <option value="stress">Synthetic 280-node stress test</option>
-      </select>
+      <select class="sample-select" id="sampleSelect" aria-label="Built-in sample"></select>
       <div class="segmented" aria-label="Detail preset">
         <button data-preset="architectural" class="active">Architectural</button>
         <button data-preset="normal">Normal</button>
@@ -72,6 +69,6 @@
   <script src="vendor/dagre.min.js"></script>
   <script src="vendor/cytoscape-dagre.js"></script>
   <script src="vendor/viz-global.js"></script>
-  <script type="module" src="app.js?v=20260920-70" onerror="const loading=document.getElementById('loading');loading.classList.add('error');loading.innerHTML='<strong>Could not load the viewer</strong><small>A required application file was unavailable.</small><button class=&quot;button&quot; onclick=&quot;location.reload()&quot;>Retry</button>'"></script>
+  <script type="module" src="app.js?v=20260920-72" onerror="const loading=document.getElementById('loading');loading.classList.add('error');loading.innerHTML='<strong>Could not load the viewer</strong><small>A required application file was unavailable.</small><button class=&quot;button&quot; onclick=&quot;location.reload()&quot;>Retry</button>'"></script>
 </body>
 </html>

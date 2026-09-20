@@ -1,0 +1,135 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  label="<GstPipeline>\ncompositor-demo\n[>]";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  subgraph cluster_videotestsrc0_0 {
+    label="GstVideoTestSrc\nvideotestsrc0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videotestsrc0_src {
+      label="";
+      style="invis";
+      videotestsrc0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_capsfilter0_1 {
+    label="GstCapsFilter\ncapsfilter0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_capsfilter0_sink {
+      label="";
+      style="invis";
+      capsfilter0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_capsfilter0_src {
+      label="";
+      style="invis";
+      capsfilter0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    capsfilter0_sink -> capsfilter0_src [style="invis"];
+  }
+  subgraph cluster_videobox0_2 {
+    label="GstVideoBox\nvideobox0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videobox0_sink {
+      label="";
+      style="invis";
+      videobox0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videobox0_src {
+      label="";
+      style="invis";
+      videobox0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videobox0_sink -> videobox0_src [style="invis"];
+  }
+  subgraph cluster_videotestsrc1_3 {
+    label="GstVideoTestSrc\nvideotestsrc1\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videotestsrc1_src {
+      label="";
+      style="invis";
+      videotestsrc1_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_capsfilter1_4 {
+    label="GstCapsFilter\ncapsfilter1\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_capsfilter1_sink {
+      label="";
+      style="invis";
+      capsfilter1_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_capsfilter1_src {
+      label="";
+      style="invis";
+      capsfilter1_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    capsfilter1_sink -> capsfilter1_src [style="invis"];
+  }
+  subgraph cluster_compositor0_5 {
+    label="GstCompositor\ncompositor0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_compositor0_sink {
+      label="";
+      style="invis";
+      compositor0_sink_0 [color=black, fillcolor="#aaaaff", label="sink_0\n[>][bfb]", height="0.2", style="filled,solid"];
+      compositor0_sink_1 [color=black, fillcolor="#aaaaff", label="sink_1\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_compositor0_src {
+      label="";
+      style="invis";
+      compositor0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    compositor0_sink_0 -> compositor0_src [style="invis"];
+  }
+  subgraph cluster_videoconvert0_6 {
+    label="GstVideoConvert\nvideoconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videoconvert0_sink {
+      label="";
+      style="invis";
+      videoconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videoconvert0_src {
+      label="";
+      style="invis";
+      videoconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videoconvert0_sink -> videoconvert0_src [style="invis"];
+  }
+  subgraph cluster_xvimagesink0_7 {
+    label="GstXvImageSink\nxvimagesink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_xvimagesink0_sink {
+      label="";
+      style="invis";
+      xvimagesink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  videotestsrc0_src -> capsfilter0_sink [label="video/x-rawl width: 100l height: 100l framerate: 10/1"];
+  capsfilter0_src -> videobox0_sink [label="video/x-raw"];
+  videobox0_src -> compositor0_sink_0 [label="video/x-raw"];
+  videotestsrc1_src -> capsfilter1_sink [label="video/x-rawl width: 320l height: 240l framerate: 5/1"];
+  capsfilter1_src -> compositor0_sink_1 [label="video/x-raw"];
+  compositor0_src -> videoconvert0_sink [label="video/x-raw"];
+  videoconvert0_src -> xvimagesink0_sink [label="video/x-raw"];
+}

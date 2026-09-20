@@ -1,0 +1,207 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  label="<GstPipeline>\ntee-visualization\n[>]";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  subgraph cluster_filesrc0_0 {
+    label="GstFileSrc\nfilesrc0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_filesrc0_src {
+      label="";
+      style="invis";
+      filesrc0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_decodebin0_1 {
+    label="GstDecodeBin\ndecodebin0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_decodebin0_sink {
+      label="";
+      style="invis";
+      decodebin0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_decodebin0_src {
+      label="";
+      style="invis";
+      decodebin0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    decodebin0_sink -> decodebin0_src [style="invis"];
+  }
+  subgraph cluster_tee0_2 {
+    label="GstTee\ntee0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_tee0_sink {
+      label="";
+      style="invis";
+      tee0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_tee0_src {
+      label="";
+      style="invis";
+      tee0_src_0 [color=black, fillcolor="#ffaaaa", label="src_0\n[>][bfb]", height="0.2", style="filled,solid"];
+      tee0_src_1 [color=black, fillcolor="#ffaaaa", label="src_1\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    tee0_sink -> tee0_src_0 [style="invis"];
+  }
+  subgraph cluster_queue0_3 {
+    label="GstQueue\nqueue0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_queue0_sink {
+      label="";
+      style="invis";
+      queue0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_queue0_src {
+      label="";
+      style="invis";
+      queue0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    queue0_sink -> queue0_src [style="invis"];
+  }
+  subgraph cluster_audioconvert0_4 {
+    label="GstAudioConvert\naudioconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_audioconvert0_sink {
+      label="";
+      style="invis";
+      audioconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_audioconvert0_src {
+      label="";
+      style="invis";
+      audioconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    audioconvert0_sink -> audioconvert0_src [style="invis"];
+  }
+  subgraph cluster_audioresample0_5 {
+    label="GstAudioResample\naudioresample0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_audioresample0_sink {
+      label="";
+      style="invis";
+      audioresample0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_audioresample0_src {
+      label="";
+      style="invis";
+      audioresample0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    audioresample0_sink -> audioresample0_src [style="invis"];
+  }
+  subgraph cluster_autoaudiosink0_6 {
+    label="GstAutoAudioSink\nautoaudiosink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_autoaudiosink0_sink {
+      label="";
+      style="invis";
+      autoaudiosink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_queue1_7 {
+    label="GstQueue\nqueue1\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_queue1_sink {
+      label="";
+      style="invis";
+      queue1_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_queue1_src {
+      label="";
+      style="invis";
+      queue1_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    queue1_sink -> queue1_src [style="invis"];
+  }
+  subgraph cluster_audioconvert1_8 {
+    label="GstAudioConvert\naudioconvert1\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_audioconvert1_sink {
+      label="";
+      style="invis";
+      audioconvert1_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_audioconvert1_src {
+      label="";
+      style="invis";
+      audioconvert1_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    audioconvert1_sink -> audioconvert1_src [style="invis"];
+  }
+  subgraph cluster_goom0_9 {
+    label="GstGoom\ngoom0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_goom0_sink {
+      label="";
+      style="invis";
+      goom0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_goom0_src {
+      label="";
+      style="invis";
+      goom0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    goom0_sink -> goom0_src [style="invis"];
+  }
+  subgraph cluster_videoconvert0_10 {
+    label="GstVideoConvert\nvideoconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videoconvert0_sink {
+      label="";
+      style="invis";
+      videoconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videoconvert0_src {
+      label="";
+      style="invis";
+      videoconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videoconvert0_sink -> videoconvert0_src [style="invis"];
+  }
+  subgraph cluster_autovideosink0_11 {
+    label="GstAutoVideoSink\nautovideosink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_autovideosink0_sink {
+      label="";
+      style="invis";
+      autovideosink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  filesrc0_src -> decodebin0_sink [label="ANY"];
+  decodebin0_src -> tee0_sink [label="audio/x-raw"];
+  tee0_src_0 -> queue0_sink [label="audio/x-raw"];
+  queue0_src -> audioconvert0_sink [label="audio/x-raw"];
+  audioconvert0_src -> audioresample0_sink [label="audio/x-raw"];
+  audioresample0_src -> autoaudiosink0_sink [label="audio/x-raw"];
+  tee0_src_1 -> queue1_sink [label="audio/x-raw"];
+  queue1_src -> audioconvert1_sink [label="audio/x-raw"];
+  audioconvert1_src -> goom0_sink [label="audio/x-raw"];
+  goom0_src -> videoconvert0_sink [label="video/x-raw"];
+  videoconvert0_src -> autovideosink0_sink [label="video/x-raw"];
+}

@@ -1,0 +1,122 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  label="<GstPipeline>\nrtp-h264-transmitter\n[>]";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  subgraph cluster_v4l2src0_0 {
+    label="GstV4l2Src\nv4l2src0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_v4l2src0_src {
+      label="";
+      style="invis";
+      v4l2src0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  subgraph cluster_queue0_1 {
+    label="GstQueue\nqueue0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_queue0_sink {
+      label="";
+      style="invis";
+      queue0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_queue0_src {
+      label="";
+      style="invis";
+      queue0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    queue0_sink -> queue0_src [style="invis"];
+  }
+  subgraph cluster_videoconvert0_2 {
+    label="GstVideoConvert\nvideoconvert0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_videoconvert0_sink {
+      label="";
+      style="invis";
+      videoconvert0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_videoconvert0_src {
+      label="";
+      style="invis";
+      videoconvert0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    videoconvert0_sink -> videoconvert0_src [style="invis"];
+  }
+  subgraph cluster_x264enc0_3 {
+    label="GstX264Enc\nx264enc0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_x264enc0_sink {
+      label="";
+      style="invis";
+      x264enc0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_x264enc0_src {
+      label="";
+      style="invis";
+      x264enc0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    x264enc0_sink -> x264enc0_src [style="invis"];
+  }
+  subgraph cluster_capsfilter0_4 {
+    label="GstCapsFilter\ncapsfilter0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_capsfilter0_sink {
+      label="";
+      style="invis";
+      capsfilter0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_capsfilter0_src {
+      label="";
+      style="invis";
+      capsfilter0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    capsfilter0_sink -> capsfilter0_src [style="invis"];
+  }
+  subgraph cluster_rtph264pay0_5 {
+    label="GstRtpH264Pay\nrtph264pay0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_rtph264pay0_sink {
+      label="";
+      style="invis";
+      rtph264pay0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    subgraph cluster_rtph264pay0_src {
+      label="";
+      style="invis";
+      rtph264pay0_src [color=black, fillcolor="#ffaaaa", label="src\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+    rtph264pay0_sink -> rtph264pay0_src [style="invis"];
+  }
+  subgraph cluster_udpsink0_6 {
+    label="GstUDPSink\nudpsink0\n[>]";
+    style="filled,rounded";
+    color=black;
+    fillcolor="#ffffff";
+    subgraph cluster_udpsink0_sink {
+      label="";
+      style="invis";
+      udpsink0_sink [color=black, fillcolor="#aaaaff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+    }
+  }
+  v4l2src0_src -> queue0_sink [label="video/x-raw"];
+  queue0_src -> videoconvert0_sink [label="video/x-raw"];
+  videoconvert0_src -> x264enc0_sink [label="video/x-raw"];
+  x264enc0_src -> capsfilter0_sink [label="video/x-h264"];
+  capsfilter0_src -> rtph264pay0_sink [label="video/x-h264"];
+  rtph264pay0_src -> udpsink0_sink [label="application/x-rtp"];
+}

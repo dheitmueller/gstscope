@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from '../src/geometry.js';
-import { centeredLayoutTranslations, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
+import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from '../src/model.js';
 
 const cases = [
   { source: { x: 0, y: 0 }, target: { x: 300, y: 140 }, ratio: 0.5 },
@@ -201,6 +201,23 @@ assert.equal(
     { name: 'src_0', element: 'queue-b' }
   ),
   false
+);
+
+assert.deepEqual(
+  compactSingleInputBranches([
+    { id: 'tee', x1: 0, x2: 100, y1: 80, y2: 140 },
+    { id: 'short-sink', x1: 200, x2: 320, y1: 0, y2: 50 },
+    { id: 'parser-bin', x1: 1800, x2: 2200, y1: 180, y2: 300 },
+    { id: 'encoder-bin', x1: 2600, x2: 3000, y1: 180, y2: 300 }
+  ], [
+    { source: 'tee', target: 'short-sink' },
+    { source: 'tee', target: 'parser-bin' },
+    { source: 'parser-bin', target: 'encoder-bin' }
+  ], 100),
+  [
+    { id: 'parser-bin', dx: -1600 },
+    { id: 'encoder-bin', dx: -1900 }
+  ]
 );
 
 console.log('Validated orthogonal routing control points');
