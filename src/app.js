@@ -1,8 +1,8 @@
-import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-76';
-import { auditLayout } from './layout-quality.js?v=20260920-76';
-import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-76';
-import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-76';
-import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-76';
+import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-77';
+import { auditLayout } from './layout-quality.js?v=20260920-77';
+import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-77';
+import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-77';
+import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-77';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -32,6 +32,8 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-76';
     graph: null,
     cy: null,
     navigator: null,
+    navigatorResizeObserver: null,
+    navigatorResizeFrame: null,
     collapsed: new Set(),
     positions: new Map(),
     preset: 'architectural',
@@ -736,6 +738,14 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-76';
     const previousVisible = state.cy ? new Set(state.cy.nodes().map(node => node.id())) : new Set();
     rememberPositions();
     const view = projectGraph();
+    if (state.navigatorResizeObserver) {
+      state.navigatorResizeObserver.disconnect();
+      state.navigatorResizeObserver = null;
+    }
+    if (state.navigatorResizeFrame) {
+      cancelAnimationFrame(state.navigatorResizeFrame);
+      state.navigatorResizeFrame = null;
+    }
     if (state.navigator) {
       // Navigator 2.0.2 exposes the cancellable throttled render callback but
       // does not cancel it in destroy(). Cancel it before destroying Cytoscape
@@ -828,12 +838,28 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-76';
       settleAuxiliaryGeometry(cy, fit, 42);
     }
     if (typeof cy.navigator === 'function') {
-      state.navigator = cy.navigator({
+      const navigator = cy.navigator({
         container: '#graphNavigator',
         removeCustomContainer: false,
         viewLiveFramerate: 30,
         rerenderDelay: 250
       });
+      state.navigator = navigator;
+      if (typeof ResizeObserver === 'function') {
+        state.navigatorResizeObserver = new ResizeObserver(() => {
+          if (state.navigatorResizeFrame) cancelAnimationFrame(state.navigatorResizeFrame);
+          state.navigatorResizeFrame = requestAnimationFrame(() => requestAnimationFrame(() => {
+            state.navigatorResizeFrame = null;
+            if (state.cy !== cy || state.navigator !== navigator) return;
+            // Cytoscape and Navigator both cache viewport dimensions. A
+            // ResizeObserver runs after CSS layout, avoiding the stale values
+            // seen when their window resize handlers run too early.
+            cy.resize();
+            navigator.resize();
+          }));
+        });
+        state.navigatorResizeObserver.observe($('cy'));
+      }
     }
     clearTimeout(startupTimer);
     state.building = false;

@@ -1,20 +1,20 @@
 export const SAMPLE_CATALOG = [
   {
-    id: 'gps-filesrc-video-audio', label: 'Real capture: MP4 audio + video', file: 'gps-filesrc-video-audio.dot',
+    id: 'gps-filesrc-video-audio', label: 'MP4 audio + video', file: 'gps-filesrc-video-audio.dot',
     author: 'Stéphane Cerveau and GstPipelineStudio contributors',
     source: 'https://gitlab.freedesktop.org/dabrain34/GstPipelineStudio/-/blob/056bea68fc5397b9355611af718e407573d624af/data/dots/gst126_filesrc_video_audio.dot',
     license: 'GPL-3.0-or-later — unmodified upstream capture',
     description: 'A real GStreamer 1.26 runtime capture with audio and video branches, parsebin, queues, decoders, converters, and nested automatic sink bins.'
   },
   {
-    id: 'gps-big-buck-bunny', label: 'Real capture: Big Buck Bunny', file: 'gps-big-buck-bunny.dot',
+    id: 'gps-big-buck-bunny', label: 'Big Buck Bunny', file: 'gps-big-buck-bunny.dot',
     author: 'Stéphane Cerveau and GstPipelineStudio contributors',
     source: 'https://gitlab.freedesktop.org/dabrain34/GstPipelineStudio/-/blob/056bea68fc5397b9355611af718e407573d624af/data/dots/gst126_filesrc_bbb_tooltip.dot',
     license: 'GPL-3.0-or-later — unmodified upstream capture',
     description: 'A real GStreamer 1.26 Big Buck Bunny playback capture with demuxing, parsebin internals, H.264 decoding, conversion, and an automatic video sink bin.'
   },
   {
-    id: 'gps-jellyfish', label: 'Real capture: Jellyfish H.264', file: 'gps-jellyfish.dot',
+    id: 'gps-jellyfish', label: 'Jellyfish H.264', file: 'gps-jellyfish.dot',
     author: 'Stéphane Cerveau and GstPipelineStudio contributors',
     source: 'https://gitlab.freedesktop.org/dabrain34/GstPipelineStudio/-/blob/056bea68fc5397b9355611af718e407573d624af/data/dots/gst126_filesrc_jelly_tooltip.dot',
     license: 'GPL-3.0-or-later — unmodified upstream capture',
