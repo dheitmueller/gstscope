@@ -32,6 +32,7 @@
     <section class="graph-shell" id="dropZone">
       <div class="canvas-grid"></div>
       <div id="cy" aria-label="Interactive pipeline graph"></div>
+      <div id="graphNavigator" class="cytoscape-navigator" aria-label="Graph overview and current viewport" title="Graph overview — drag the highlighted viewport to navigate"></div>
       <div class="pad-tooltip" id="padTooltip" role="tooltip"></div>
       <div class="loading" id="loading"><span></span>Building semantic view</div>
         <div class="hint">Click to trace · inputs amber · outputs teal · Double-click a bin to expand</div>
@@ -68,7 +69,8 @@
   <script src="vendor/cytoscape.min.js"></script>
   <script src="vendor/dagre.min.js"></script>
   <script src="vendor/cytoscape-dagre.js"></script>
+  <script src="vendor/cytoscape-navigator.js"></script>
   <script src="vendor/viz-global.js"></script>
-  <script type="module" src="app.js?v=20260920-74" onerror="const loading=document.getElementById('loading');loading.classList.add('error');loading.innerHTML='<strong>Could not load the viewer</strong><small>A required application file was unavailable.</small><button class=&quot;button&quot; onclick=&quot;location.reload()&quot;>Retry</button>'"></script>
+  <script type="module" src="app.js?v=20260920-76" onerror="const loading=document.getElementById('loading');loading.classList.add('error');loading.innerHTML='<strong>Could not load the viewer</strong><small>A required application file was unavailable.</small><button class=&quot;button&quot; onclick=&quot;location.reload()&quot;>Retry</button>'"></script>
 </body>
 </html>

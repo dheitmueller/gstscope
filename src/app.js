@@ -1,8 +1,8 @@
-import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-74';
-import { auditLayout } from './layout-quality.js?v=20260920-74';
-import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-74';
-import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-74';
-import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-74';
+import { horizontalLabelPlacement, orthogonalPolylineSegments, orthogonalRouteOverlapScore, orthogonalRouteSegments, orthogonalSegmentData, segmentDataForControls } from './geometry.js?v=20260920-76';
+import { auditLayout } from './layout-quality.js?v=20260920-76';
+import { centeredLayoutTranslations, compactSingleInputBranches, isolatedSiblingPlacements, isRedundantProxyPad, nonOverlappingSiblingOffsets, overlapAwareLaneOffsets, padsShareFlowChannel, preferredPadId, projectedEdgeKey, siblingOrderAssignments, topRightBadgeTarget } from './model.js?v=20260920-76';
+import { GENERATED_SAMPLE_DOTS } from './generated-samples.js?v=20260920-76';
+import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-76';
 
 /* GstScope proof of concept: authoritative GStreamer model -> semantic projection -> Cytoscape view. */
 (() => {
@@ -31,6 +31,7 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-74';
   const state = {
     graph: null,
     cy: null,
+    navigator: null,
     collapsed: new Set(),
     positions: new Map(),
     preset: 'architectural',
@@ -658,7 +659,7 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-74';
       { selector: 'node[typeClass="branch"]', style: { 'background-color': '#251d3d', 'border-color': '#a78bfa', shape: 'round-rectangle', width: 126, height: 48 } },
       { selector: 'node[typeClass="queue"]', style: { width: 76, height: 34, 'font-size': 10, 'border-style': 'dashed', 'border-color': '#718198' } },
       { selector: 'node[kind="bin"][collapsed]', style: { 'background-color': '#14202b', 'border-color': '#58a6b7', 'border-width': 2, width: 210, height: 76, 'text-wrap': 'wrap', 'text-max-width': 172, 'font-size': 11, 'line-height': 1.25, 'background-image': EXPAND_ICON, 'background-image-opacity': 1, 'background-fit': 'none', 'background-repeat': 'no-repeat', 'background-width': '18px', 'background-height': '18px', 'background-position-x': '96%', 'background-position-y': '10%' } },
-      { selector: 'node[kind="bin"]:parent', style: { 'background-color': '#0e1722', 'background-opacity': .72, 'border-color': '#30445b', 'border-width': 1.5, 'border-style': 'dashed', 'padding': 28, 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 16, 'font-size': 12, 'font-weight': 650, color: '#b9ccdc', 'z-compound-depth': 'bottom' } },
+      { selector: 'node[kind="bin"]:parent', style: { 'background-color': '#0e1722', 'background-opacity': .72, 'border-color': '#30445b', 'border-width': 1.5, 'border-style': 'dashed', 'padding': 28, 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 16, 'font-size': 12, 'font-weight': 700, color: '#b9ccdc', 'z-compound-depth': 'bottom' } },
       { selector: 'node[kind="bin"][collapsible]:parent', style: { 'background-image': COLLAPSE_ICON, 'background-image-opacity': 1, 'background-fit': 'none', 'background-repeat': 'no-repeat', 'background-width': '18px', 'background-height': '18px', 'background-position-x': '98%', 'background-position-y': '2%' } },
       { selector: 'node.has-pad-badges:childless', style: { height: 'data(nodeHeight)', 'text-valign': 'center', 'text-margin-y': 'data(nodeLabelOffsetY)' } },
       { selector: 'node[kind="pad"]', style: { width: 'data(padWidth)', height: 14, shape: 'round-rectangle', 'font-size': 8, 'font-weight': 600, 'background-color': '#182536', 'border-width': 1, 'border-color': '#74849b', color: '#dbe7f2', 'text-wrap': 'ellipsis', 'text-max-width': 50, 'text-valign': 'center', 'text-halign': 'center', 'z-compound-depth': 'top', 'z-index-compare': 'manual', 'z-index': 1001 } },
@@ -735,6 +736,14 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-74';
     const previousVisible = state.cy ? new Set(state.cy.nodes().map(node => node.id())) : new Set();
     rememberPositions();
     const view = projectGraph();
+    if (state.navigator) {
+      // Navigator 2.0.2 exposes the cancellable throttled render callback but
+      // does not cancel it in destroy(). Cancel it before destroying Cytoscape
+      // so a pending thumbnail cannot call cy.png() on a released renderer.
+      state.navigator._onRenderHandler?.cancel?.();
+      state.navigator.destroy();
+      state.navigator = null;
+    }
     if (state.cy) state.cy.destroy();
     state.cy = cytoscape({
       container: $('cy'), elements: [...view.nodes, ...view.edges], style: stylesheet(),
@@ -817,6 +826,14 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-74';
       applyEdgeGeometry();
       if (fit) cy.fit(undefined, 42);
       settleAuxiliaryGeometry(cy, fit, 42);
+    }
+    if (typeof cy.navigator === 'function') {
+      state.navigator = cy.navigator({
+        container: '#graphNavigator',
+        removeCustomContainer: false,
+        viewLiveFramerate: 30,
+        rerenderDelay: 250
+      });
     }
     clearTimeout(startupTimer);
     state.building = false;

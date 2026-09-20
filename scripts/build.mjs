@@ -34,6 +34,7 @@ const vendorFiles = [
   ['node_modules/cytoscape/dist/cytoscape.min.js', 'vendor/cytoscape.min.js'],
   ['node_modules/dagre/dist/dagre.min.js', 'vendor/dagre.min.js'],
   ['node_modules/cytoscape-dagre/dist/cytoscape-dagre.min.js', 'vendor/cytoscape-dagre.js'],
+  ['node_modules/cytoscape-navigator/cytoscape-navigator.js', 'vendor/cytoscape-navigator.js'],
   ['node_modules/@viz-js/viz/dist/viz-global.js', 'vendor/viz-global.js']
 ];
 
