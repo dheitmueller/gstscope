@@ -1300,11 +1300,85 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     placements.forEach(placement => {
       const group = transitionGroups.get(placement.groupKey);
       placement.position = { ...placement.position, y: placement.position.y + group.offset };
-      const lane = lanes.get(placement.laneId) || { id: placement.laneId, minY: Infinity, maxY: -Infinity, offset: 0 };
+      const halfWidth = Math.max(placement.node.outerWidth(), 40) / 2;
+      const lane = lanes.get(placement.laneId) || { id: placement.laneId, minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, offset: 0, xOffset: 0 };
+      lane.minX = Math.min(lane.minX, placement.position.x - halfWidth);
+      lane.maxX = Math.max(lane.maxX, placement.position.x + halfWidth);
       lane.minY = Math.min(lane.minY, placement.position.y - placement.halfHeight);
       lane.maxY = Math.max(lane.maxY, placement.position.y + placement.halfHeight);
       lanes.set(placement.laneId, lane);
     });
+
+    // The leaf guide orders individual elements, but a wide expanded source
+    // bin can still overlap the x-range of the bin it feeds. Rank connected
+    // top-level bins as whole rectangles, then translate every child in a bin
+    // by the same amount. This keeps upstream bin bounds wholly to the left of
+    // downstream bin bounds without disturbing their internal layout.
+    const laneForNode = node => {
+      if (!node?.length) return '__root__';
+      let current = node;
+      let topParent = null;
+      while (current.parent().length) {
+        topParent = current.parent();
+        current = topParent;
+      }
+      return topParent ? topParent.id() : node.isParent() ? node.id() : '__root__';
+    };
+    const laneEdges = new Set();
+    layoutEdges.forEach(edge => {
+      const sourceLane = laneForNode(cy.getElementById(edge.data('layoutSource')));
+      const targetLane = laneForNode(cy.getElementById(edge.data('layoutTarget')));
+      if (sourceLane !== '__root__' && targetLane !== '__root__' && sourceLane !== targetLane) {
+        laneEdges.add(`${sourceLane}\u0000${targetLane}`);
+      }
+    });
+    if (laneEdges.size) {
+      const laneGuide = new dagre.graphlib.Graph({ directed: true });
+      laneEdges.forEach(key => {
+        const [sourceLane, targetLane] = key.split('\u0000');
+        [sourceLane, targetLane].forEach(laneId => { if (!laneGuide.hasNode(laneId)) laneGuide.setNode(laneId); });
+        if (laneGuide.hasNode(sourceLane) && laneGuide.hasNode(targetLane)) {
+          laneGuide.setEdge(sourceLane, targetLane);
+        }
+      });
+
+      // Preserve bins that participate in a directed cycle as one horizontal
+      // group. The condensed graph is acyclic, so downstream groups can be
+      // shifted minimally without an iterative cycle pushing everything ever
+      // farther right.
+      const components = dagre.graphlib.alg.tarjan(laneGuide);
+      const componentByLane = new Map();
+      const componentData = components.map((members, id) => {
+        members.forEach(laneId => componentByLane.set(laneId, id));
+        return {
+          id,
+          members,
+          minX: Math.min(...members.map(laneId => lanes.get(laneId)?.minX ?? Infinity)),
+          maxX: Math.max(...members.map(laneId => lanes.get(laneId)?.maxX ?? -Infinity)),
+          xOffset: 0
+        };
+      });
+      const componentEdges = new Set();
+      laneEdges.forEach(key => {
+        const [sourceLane, targetLane] = key.split('\u0000');
+        const sourceComponent = componentByLane.get(sourceLane);
+        const targetComponent = componentByLane.get(targetLane);
+        if (sourceComponent !== targetComponent) componentEdges.add(`${sourceComponent}:${targetComponent}`);
+      });
+      const binGap = nodeCount > 100 ? 150 : 190;
+      for (let pass = 0; pass < componentData.length; pass++) {
+        componentEdges.forEach(key => {
+          const [sourceId, targetId] = key.split(':').map(Number);
+          const source = componentData[sourceId];
+          const target = componentData[targetId];
+          target.xOffset = Math.max(target.xOffset, source.maxX + source.xOffset + binGap - target.minX);
+        });
+      }
+      componentData.forEach(component => component.members.forEach(laneId => {
+        const lane = lanes.get(laneId);
+        if (lane) lane.xOffset = component.xOffset;
+      }));
+    }
 
     // Compound parents resize around their children after layout. Keep each
     // expanded top-level bin in its own vertical lane so that resize cannot
@@ -1321,7 +1395,8 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
       laneTop += lane.maxY - lane.minY + laneGap;
     });
     cy.batch(() => placements.forEach(({ node, position, laneId }) => {
-      node.position({ x: position.x, y: position.y + lanes.get(laneId).offset });
+      const lane = lanes.get(laneId);
+      node.position({ x: position.x + lane.xOffset, y: position.y + lane.offset });
     }));
     placePadBadges();
     applyEdgeGeometry();
