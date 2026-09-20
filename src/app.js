@@ -895,7 +895,10 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
     const graphNodes = cy.nodes().filter(isGraphNode);
     const leafObstacles = graphNodes.filter(node => !node.isParent());
     const compoundObstacles = graphNodes.filter(node => node.isParent());
-    const padObstacles = cy.nodes().filter(node => node.data('kind') === 'pad');
+    // Only pads attached to a bin boundary occupy routing space. Inline element
+    // pads sit at an edge endpoint, so treating them as obstacles makes the
+    // router reject the direct route and detour outside the containing bin.
+    const padObstacles = cy.nodes().filter(node => node.data('kind') === 'pad' && node.data('boundary'));
     const overlaps = (a1, a2, b1, b2) => Math.max(Math.min(a1, a2), b1) <= Math.min(Math.max(a1, a2), b2);
     const reservedRoutes = [];
     const ancestorIds = node => {
