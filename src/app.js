@@ -774,6 +774,7 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
             .map(target => target.boundingBox({ includeLabels: false }));
           const ownerChildren = owner.descendants().filter(isGraphNode);
           const childBox = ownerChildren.length ? ownerChildren.boundingBox({ includeLabels: false }) : owner.boundingBox({ includeLabels: false });
+          const childCenterY = (childBox.y1 + childBox.y2) / 2;
           const maxPadWidth = Math.max(...pads.map(pad => pad.outerWidth()));
           const gutter = cy.getElementById(`bin-gutter:${owner.id()}:${direction}`);
           if (gutter.length) {
@@ -787,7 +788,11 @@ import { isolatedSiblingPlacements, isRedundantProxyPad, padsShareFlowChannel, p
               x: direction === 'src'
                 ? desiredBorder - compoundPadding - .5
                 : desiredBorder + compoundPadding + .5,
-              y: owner.position().y
+              // The owner's center already includes this invisible child. If
+              // we reuse it here, an initially unpositioned gutter can keep a
+              // compound bin permanently stretched toward the origin. Anchor
+              // the gutter to the real visible content instead.
+              y: childCenterY
             });
           }
           const box = owner.boundingBox({ includeLabels: false });
