@@ -62,6 +62,18 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
       target: () => ui.openButton,
       title: 'Open your pipeline',
       body: 'Open a GStreamer DOT dump from your computer. The file is processed locally and is not uploaded.',
+      action: 'Next'
+    },
+    {
+      target: () => $('presetControls'),
+      title: 'Choose the right level of detail',
+      body: 'Switch between Architectural, Normal, and Debug views—from a concise system overview to the full pipeline detail.',
+      action: 'Next'
+    },
+    {
+      target: () => $('filterControls'),
+      title: 'Focus on what matters',
+      body: 'Use the display controls to show or suppress queues, redundant tees, unlinked pads, and caps as you investigate.',
       action: 'Got it'
     }
   ];
@@ -76,6 +88,11 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
   function writeOnboarding(value) {
     try { localStorage.setItem(ONBOARDING_KEY, JSON.stringify(value)); }
     catch { /* Private browsing or disabled storage should not block the app. */ }
+  }
+
+  function clearOnboarding() {
+    try { localStorage.removeItem(ONBOARDING_KEY); }
+    catch { /* Keep the reset control harmless when storage is unavailable. */ }
   }
 
   function positionTourCallout() {
@@ -126,6 +143,15 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
     if (saved?.complete) return;
     if (saved?.welcome) return showTourStep(Number.isInteger(saved.step) ? saved.step : 0);
     ui.welcome.showModal();
+  }
+
+  function resetOnboarding() {
+    tourTarget?.classList.remove('tour-target');
+    tourTarget = null;
+    tourIndex = -1;
+    ui.tourCallout.hidden = true;
+    clearOnboarding();
+    if (!ui.welcome.open) ui.welcome.showModal();
   }
 
   function showLoading(loadId = loadSequence) {
@@ -2592,6 +2618,7 @@ import { SAMPLE_CATALOG } from './sample-catalog.js?v=20260920-79';
   ui.welcome.addEventListener('cancel', finishOnboarding);
   $('skipTour').addEventListener('click', finishOnboarding);
   $('nextTour').addEventListener('click', () => showTourStep(tourIndex + 1));
+  $('resetOnboarding').addEventListener('click', resetOnboarding);
   addEventListener('resize', positionTourCallout);
   addEventListener('scroll', positionTourCallout, true);
 

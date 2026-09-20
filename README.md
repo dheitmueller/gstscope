@@ -8,7 +8,7 @@ The latest successful build of `main` is published at **https://dheitmueller.git
 
 DOT files selected with **Open DOT** or drag-and-drop stay in the browser. GstScope has no server-side runtime and does not upload pipeline data.
 
-![GstScope showing an attributed GStreamer pipeline](docs/gstscope-screenshot.png)
+![GstScope showing the default audio/video pipeline and Overview navigator](docs/gstscope-screenshot.png)
 
 ## Local development
 
